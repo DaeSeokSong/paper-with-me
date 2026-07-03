@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+from collections import Counter
 from pathlib import Path
 
 from pwc import db as pwc_db
@@ -181,14 +182,13 @@ def dataset_leaderboard(conn, task: str, dataset: str) -> dict:
             (task, dataset),
         )
     ]
-    metric_names: list[str] = []
-    for r in rows:
-        if isinstance(r["metrics"], dict):
-            for m in r["metrics"]:
-                if m not in metric_names:
-                    metric_names.append(m)
-    # 지표 종류가 지나치게 많은 벤치마크는 상위(등장 빈도순 아님, 발견순) 일부만 컬럼으로
-    metric_names = metric_names[:8]
+    # 아카이브 리더보드는 지표명이 수천 종에 달할 수 있다(예: ImageNet 3,468종).
+    # 리스트 `not in`으로 모으면 O(행×종수)라 분 단위가 걸리므로 Counter로
+    # 빈도를 세고, 가장 널리 쓰인 지표 8개만 컬럼으로 삼는다.
+    counts = Counter(
+        m for r in rows if isinstance(r["metrics"], dict) for m in r["metrics"]
+    )
+    metric_names = [m for m, _ in counts.most_common(8)]
     if metric_names:
         key = metric_names[0]
         rows.sort(
