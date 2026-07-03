@@ -9,6 +9,7 @@ on:
     paths:
       - "app/**"
       - "scripts/smoke_check.py"
+      - "scripts/profile_routes.py"
       - ".github/workflows/verify-app.yml"
 
 jobs:
@@ -37,6 +38,9 @@ jobs:
           gh api "repos/${{ github.repository }}/actions/artifacts/$id/zip" > snapshot.zip
           mkdir -p data && unzip -o snapshot.zip -d data && rm snapshot.zip
           ls -lah data
+
+      - name: Profile slow routes
+        run: PWC_DB=data/pwc.sqlite python scripts/profile_routes.py
 
       - name: Smoke check restored features against real data
         run: PWC_DB=data/pwc.sqlite python scripts/smoke_check.py
