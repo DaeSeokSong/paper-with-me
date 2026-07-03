@@ -1,0 +1,62 @@
+"""아카이브 덤프 다운로드."""
+
+from __future__ import annotations
+
+import shutil
+import sys
+import urllib.request
+from pathlib import Path
+
+from . import sources
+
+
+def download_file(url: str, dest: Path) -> Path:
+    """URL을 dest로 내려받는다. 이미 존재하면 건너뛴다."""
+    if dest.exists():
+        print(f"  건너뜀 (이미 존재): {dest}")
+        return dest
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    part = dest.with_suffix(dest.suffix + ".part")
+    req = urllib.request.Request(url, headers={"User-Agent": sources._USER_AGENT})
+    with urllib.request.urlopen(req, timeout=120) as resp, open(part, "wb") as out:
+        shutil.copyfileobj(resp, out, length=1024 * 1024)
+    part.rename(dest)
+    print(f"  완료: {dest} ({dest.stat().st_size:,} bytes)")
+    return dest
+
+
+def download_all(data_dir: Path, only: list[str] | None = None) -> dict[str, Path]:
+    """덤프 5종(또는 only로 지정한 것만)을 data_dir/raw/ 아래로 내려받는다.
+
+    반환값: 논리 이름 -> 로컬 파일 경로
+    """
+    raw_dir = data_dir / "raw"
+    results: dict[str, Path] = {}
+    names = only or list(sources.DUMPS)
+    for name in names:
+        repo = sources.DUMPS[name]
+        print(f"[{name}] {sources.ARCHIVE_ORG}/{repo}")
+        try:
+            files = sources.list_repo_files(repo)
+            data_file = sources.pick_data_file(files)
+        except Exception as e:  # noqa: BLE001 - 개별 덤프 실패는 보고 후 계속
+            print(f"  실패: {e}", file=sys.stderr)
+            continue
+        url = sources.resolve_url(repo, data_file)
+        dest = raw_dir / f"{name}{_suffix_of(data_file)}"
+        results[name] = download_file(url, dest)
+    return results
+
+
+def _suffix_of(filename: str) -> str:
+    return ".json.gz" if filename.endswith(".json.gz") else ".json"
+
+
+def find_local_dump(data_dir: Path, name: str) -> Path | None:
+    """이미 내려받은 덤프 파일을 찾는다."""
+    raw_dir = data_dir / "raw"
+    for suffix in (".json.gz", ".json"):
+        p = raw_dir / f"{name}{suffix}"
+        if p.exists():
+            return p
+    return None

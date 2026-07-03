@@ -1,0 +1,26 @@
+[
+  {
+    "paper_url": "https://paperswithcode.com/paper/attention-is-all-you-need",
+    "paper_title": "Attention Is All You Need",
+    "paper_arxiv_id": "1706.03762",
+    "paper_url_abs": "https://arxiv.org/abs/1706.03762v7",
+    "paper_url_pdf": "https://arxiv.org/pdf/1706.03762v7.pdf",
+    "repo_url": "https://github.com/tensorflow/tensor2tensor",
+    "is_official": true,
+    "mentioned_in_paper": true,
+    "mentioned_in_github": true,
+    "framework": "tf"
+  },
+  {
+    "paper_url": "https://paperswithcode.com/paper/attention-is-all-you-need",
+    "paper_title": "Attention Is All You Need",
+    "paper_arxiv_id": "1706.03762",
+    "paper_url_abs": "https://arxiv.org/abs/1706.03762v7",
+    "paper_url_pdf": "https://arxiv.org/pdf/1706.03762v7.pdf",
+    "repo_url": "https://github.com/huggingface/transformers",
+    "is_official": false,
+    "mentioned_in_paper": false,
+    "mentioned_in_github": true,
+    "framework": "pytorch"
+  }
+]

@@ -1,0 +1,15 @@
+[
+  {
+    "url": "https://paperswithcode.com/method/transformer",
+    "name": "Transformer",
+    "full_name": "Transformer",
+    "description": "A Transformer is a model architecture that eschews recurrence and instead relies entirely on an attention mechanism.",
+    "paper": {"title": "Attention Is All You Need", "url": "https://paperswithcode.com/paper/attention-is-all-you-need"},
+    "introduced_year": 2017,
+    "source_url": "https://arxiv.org/abs/1706.03762v7",
+    "source_title": "Attention Is All You Need",
+    "code_snippet_url": null,
+    "num_papers": 10548,
+    "collections": [{"collection": "Transformers", "area": "General"}]
+  }
+]

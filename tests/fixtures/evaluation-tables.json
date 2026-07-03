@@ -1,0 +1,53 @@
+[
+  {
+    "task": "Image Classification",
+    "description": "Image classification is the task of assigning a label to an image.",
+    "categories": ["Computer Vision"],
+    "datasets": [
+      {
+        "dataset": "ImageNet",
+        "sota": {
+          "metrics": ["Top 1 Accuracy", "Top 5 Accuracy"],
+          "rows": [
+            {
+              "model_name": "ResNet-152",
+              "metrics": {"Top 1 Accuracy": "78.57%", "Top 5 Accuracy": "94.29%"},
+              "paper_url": "https://paperswithcode.com/paper/deep-residual-learning-for-image-recognition",
+              "paper_title": "Deep Residual Learning for Image Recognition",
+              "paper_date": "2015-12-10",
+              "code_links": [
+                {"title": "Official", "url": "https://github.com/KaimingHe/deep-residual-networks"}
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "subtasks": [
+      {
+        "task": "Few-Shot Image Classification",
+        "description": "",
+        "categories": [],
+        "datasets": [
+          {
+            "dataset": "Mini-ImageNet 5-way (1-shot)",
+            "sota": {
+              "metrics": ["Accuracy"],
+              "rows": [
+                {
+                  "model_name": "ProtoNet",
+                  "metrics": {"Accuracy": "49.42"},
+                  "paper_url": "https://paperswithcode.com/paper/prototypical-networks-for-few-shot-learning",
+                  "paper_title": "Prototypical Networks for Few-shot Learning",
+                  "paper_date": "2017-03-15",
+                  "code_links": []
+                }
+              ]
+            }
+          }
+        ],
+        "subtasks": []
+      }
+    ]
+  }
+]

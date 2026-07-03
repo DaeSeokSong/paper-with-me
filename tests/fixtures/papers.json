@@ -1,0 +1,28 @@
+[
+  {
+    "paper_url": "https://paperswithcode.com/paper/attention-is-all-you-need",
+    "arxiv_id": "1706.03762",
+    "title": "Attention Is All You Need",
+    "abstract": "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks...",
+    "url_abs": "https://arxiv.org/abs/1706.03762v7",
+    "url_pdf": "https://arxiv.org/pdf/1706.03762v7.pdf",
+    "proceeding": "NeurIPS 2017 12",
+    "authors": ["Ashish Vaswani", "Noam Shazeer", "Niki Parmar"],
+    "tasks": ["Machine Translation", "Language Modelling"],
+    "date": "2017-06-12",
+    "methods": [{"name": "Transformer", "full_name": "Transformer", "introduced_year": 2017}]
+  },
+  {
+    "paper_url": "https://paperswithcode.com/paper/deep-residual-learning-for-image-recognition",
+    "arxiv_id": "1512.03385",
+    "title": "Deep Residual Learning for Image Recognition",
+    "abstract": "Deeper neural networks are more difficult to train...",
+    "url_abs": "https://arxiv.org/abs/1512.03385v1",
+    "url_pdf": "https://arxiv.org/pdf/1512.03385v1.pdf",
+    "proceeding": "CVPR 2016 6",
+    "authors": ["Kaiming He", "Xiangyu Zhang", "Shaoqing Ren", "Jian Sun"],
+    "tasks": ["Image Classification"],
+    "date": "2015-12-10",
+    "methods": [{"name": "ResNet", "full_name": "Residual Network", "introduced_year": 2015}]
+  }
+]

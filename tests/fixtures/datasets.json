@@ -1,0 +1,15 @@
+[
+  {
+    "url": "https://paperswithcode.com/dataset/imagenet",
+    "name": "ImageNet",
+    "full_name": "ImageNet",
+    "homepage": "http://www.image-net.org/",
+    "description": "The ImageNet dataset contains 14,197,122 annotated images according to the WordNet hierarchy.",
+    "paper": {"title": "ImageNet: A large-scale hierarchical image database", "url": "https://paperswithcode.com/paper/imagenet-a-large-scale-hierarchical-image"},
+    "introduced_date": "2009-01-01",
+    "modalities": ["Images"],
+    "languages": [],
+    "num_papers": 12345,
+    "variants": ["ImageNet-1k", "ImageNet-21k"]
+  }
+]

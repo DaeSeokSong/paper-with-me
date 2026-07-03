@@ -1,0 +1,32 @@
+name: Build data snapshot
+
+# 아카이브 덤프를 내려받아 SQLite 스냅샷을 빌드한다.
+# 아카이브는 불변 데이터이므로 수동 실행(workflow_dispatch)만 둔다.
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pipeline
+        run: pip install -e ".[stream]"
+
+      - name: Download dumps and build SQLite
+        run: python -m pwc build --data-dir data
+
+      - name: Show stats
+        run: python -m pwc stats --data-dir data
+
+      - name: Upload snapshot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pwc-sqlite
+          path: data/pwc.sqlite
+          retention-days: 30
