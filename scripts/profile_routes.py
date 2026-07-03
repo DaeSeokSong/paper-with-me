@@ -18,7 +18,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.main import create_app  # noqa: E402
 
-DEFAULT_PATHS = ["/sota/image-classification", "/task/semantic-segmentation"]
+DEFAULT_PATHS = [
+    "/",
+    "/sota/image-classification",
+    "/task/semantic-segmentation",
+    "/sota/image-classification/imagenet",
+]
 
 
 def main() -> int:

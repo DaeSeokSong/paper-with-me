@@ -55,6 +55,9 @@ def main() -> int:
     conn = queries.connect(db_path)
     st = queries.stats(conn)
     print("적재 통계:", ", ".join(f"{k}={v:,}" for k, v in st.items()))
+    # 진단용: 실데이터 URL 형태 확인 (조회 최적화의 정확 일치 경로 검증)
+    for row in conn.execute("SELECT paper_url FROM papers LIMIT 3"):
+        print("  sample paper_url:", row["paper_url"])
 
     # 원본 서비스 규모 대비 하한선 (마지막 스냅샷 기준 대략치의 절반 이하로 잡음)
     check("papers >= 500k", st["papers"] >= 500_000, f"{st['papers']:,}")
@@ -87,8 +90,12 @@ def main() -> int:
     check("SOTA task 목록", r.status_code == 200 and "Image Classification" in r.text)
 
     r = get("/sota/image-classification")
-    check("리더보드 (Image Classification/ImageNet)",
+    check("task 벤치마크 목록 (Image Classification)",
           r.status_code == 200 and "ImageNet" in r.text)
+
+    r = get("/sota/image-classification/imagenet")
+    check("리더보드 표 (Image Classification on ImageNet)",
+          r.status_code == 200 and "<table" in r.text)
 
     r = get("/task/semantic-segmentation")
     check("원본 /task/ URL 호환", r.status_code == 200)

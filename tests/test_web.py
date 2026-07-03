@@ -57,18 +57,28 @@ def test_sota_index_and_task_page(client):
     assert r.status_code == 200
     assert "Image Classification" in r.text
 
+    # task 페이지는 벤치마크(dataset) 카드 목록
     r = client.get("/sota/image-classification")
     assert r.status_code == 200
     assert "ImageNet" in r.text
-    assert "ResNet-152" in r.text
-    assert "Top 1 Accuracy" in r.text
+    assert "/sota/image-classification/imagenet" in r.text
 
     # 원본 URL 구조 /task/{slug} 도 동작
     assert client.get("/task/image-classification").status_code == 200
 
-    # subtask도 독립 리더보드로 접근 가능
-    r = client.get("/sota/few-shot-image-classification")
+
+def test_dataset_leaderboard_page(client):
+    r = client.get("/sota/image-classification/imagenet")
+    assert r.status_code == 200
+    assert "ResNet-152" in r.text
+    assert "Top 1 Accuracy" in r.text
+
+    # subtask 벤치마크도 독립 리더보드 페이지로 접근 가능
+    r = client.get("/sota/few-shot-image-classification/mini-imagenet-5-way-1-shot")
+    assert r.status_code == 200
     assert "ProtoNet" in r.text
+
+    assert client.get("/sota/image-classification/no-such-dataset").status_code == 404
 
 
 def test_datasets(client):

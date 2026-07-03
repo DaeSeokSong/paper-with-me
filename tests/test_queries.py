@@ -32,24 +32,28 @@ def _fill_board(conn, task: str, dataset: str, n: int) -> None:
     conn.commit()
 
 
-def test_task_leaderboards_caps_rows_and_reports_total(conn):
-    _fill_board(conn, "Big Task", "DS", 150)
-    boards = queries.task_leaderboards(conn, "Big Task", limit=100)
-    assert boards[0]["total"] == 150
-    assert len(boards[0]["rows"]) == 100
-    # 첫 지표 내림차순 정렬 확인
-    assert boards[0]["rows"][0]["model_name"] == "model-149"
-
-    full = queries.task_leaderboards(conn, "Big Task", limit=None)
-    assert len(full[0]["rows"]) == 150
-
-
-def test_task_leaderboards_single_query_grouping(conn):
+def test_task_benchmarks_lists_datasets_without_rows(conn):
     _fill_board(conn, "T", "DS-b", 3)
     _fill_board(conn, "T", "DS-a", 2)
-    boards = queries.task_leaderboards(conn, "T")
-    assert [b["dataset"] for b in boards] == ["DS-a", "DS-b"]
-    assert [b["total"] for b in boards] == [2, 3]
+    benchmarks = queries.task_benchmarks(conn, "T")
+    assert [b["dataset"] for b in benchmarks] == ["DS-b", "DS-a"]  # 결과 수 내림차순
+    assert [b["n_rows"] for b in benchmarks] == [3, 2]
+    assert benchmarks[0]["slug"] == "ds-b"
+
+
+def test_dataset_leaderboard_sorted_by_first_metric(conn):
+    _fill_board(conn, "Big Task", "DS", 150)
+    board = queries.dataset_leaderboard(conn, "Big Task", "DS")
+    assert len(board["rows"]) == 150
+    assert board["rows"][0]["model_name"] == "model-149"  # 첫 지표 내림차순
+    assert board["metric_names"] == ["Accuracy"]
+
+
+def test_find_benchmark_dataset(conn):
+    _fill_board(conn, "T", "Mini-ImageNet 5-way (1-shot)", 1)
+    ds = queries.find_benchmark_dataset(conn, "T", "mini-imagenet-5-way-1-shot")
+    assert ds == "Mini-ImageNet 5-way (1-shot)"
+    assert queries.find_benchmark_dataset(conn, "T", "nope") is None
 
 
 def test_find_task_uses_cache(conn):

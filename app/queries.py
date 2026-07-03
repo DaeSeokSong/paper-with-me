@@ -52,16 +52,21 @@ def latest_papers(conn, page: int = 1) -> list[dict]:
 
 
 def trending_papers(conn, limit: int = 10) -> list[dict]:
-    """아카이브에는 실시간 스타 수가 없으므로 '구현체 수 × 최신성'을 근사치로 쓴다."""
+    """아카이브에는 실시간 스타 수가 없으므로 '구현체 수 × 최신성'을 근사치로 쓴다.
+
+    전체 JOIN+GROUP BY(300k×576k)는 수십 초가 걸리므로, 날짜 인덱스로 최신
+    논문 일부만 훑고 논문별 구현 수는 PK 프리픽스 조회로 센다.
+    """
     rows = conn.execute(
-        """SELECT p.*, COUNT(r.repo_url) AS repo_count
-           FROM papers p JOIN repos r ON r.paper_url = p.paper_url
-           WHERE p.date IS NOT NULL
-           GROUP BY p.paper_url
-           ORDER BY p.date DESC, repo_count DESC
-           LIMIT ?""", (limit,)
+        """SELECT p.*,
+                  (SELECT COUNT(*) FROM repos r WHERE r.paper_url = p.paper_url)
+                  AS repo_count
+           FROM papers p WHERE p.date IS NOT NULL
+           ORDER BY p.date DESC LIMIT 300"""
     ).fetchall()
-    return [_loads(r, "authors", "tasks", "methods") for r in rows]
+    papers = [_loads(r, "authors", "tasks", "methods") for r in rows
+              if r["repo_count"]]
+    return papers[:limit]
 
 
 def get_paper(conn, slug: str) -> dict | None:
@@ -147,45 +152,52 @@ def find_task(conn, slug: str) -> str | None:
     return _task_maps[key].get(slug)
 
 
-def task_leaderboards(conn, task: str, limit: int | None = 100) -> list[dict]:
-    """task의 dataset별 리더보드.
+def task_benchmarks(conn, task: str) -> list[dict]:
+    """task의 벤치마크(dataset) 목록. 원본 사이트처럼 task 페이지에는
+    카드 목록만 보여주고, 표는 dataset별 페이지에서 렌더링한다
+    (대형 task는 dataset이 수천 개라 전체 표를 한 페이지에 담을 수 없다)."""
+    rows = conn.execute(
+        """SELECT dataset, COUNT(*) AS n_rows FROM sota_rows
+           WHERE task = ? GROUP BY dataset ORDER BY n_rows DESC""",
+        (task,),
+    ).fetchall()
+    return [dict(r) | {"slug": slugify(r["dataset"] or "")} for r in rows]
 
-    행 전체를 단일 쿼리로 가져와 dataset별로 묶는다 (dataset별 개별 쿼리 금지).
-    첫 번째 지표를 숫자로 파싱해 내림차순 정렬하고, limit이 있으면 dataset당
-    상위 limit개만 돌려준다 (대형 리더보드의 응답 크기 제한).
-    """
-    by_dataset: dict[str, list[dict]] = {}
-    for r in conn.execute(
-        "SELECT * FROM sota_rows WHERE task = ? ORDER BY dataset", (task,)
-    ):
-        row = _loads(r, "metrics", "code_links")
-        by_dataset.setdefault(row["dataset"], []).append(row)
 
-    boards = []
-    for ds in sorted(by_dataset, key=lambda d: (d is None, d or "")):
-        rows = by_dataset[ds]
-        metric_names: list[str] = []
-        for r in rows:
-            if isinstance(r["metrics"], dict):
-                for m in r["metrics"]:
-                    if m not in metric_names:
-                        metric_names.append(m)
-        if metric_names:
-            key = metric_names[0]
-            rows.sort(
-                key=lambda r: _metric_value(
-                    r["metrics"].get(key) if isinstance(r["metrics"], dict) else None
-                ),
-                reverse=True,
-            )
-        total = len(rows)
-        if limit is not None:
-            rows = rows[:limit]
-        boards.append({
-            "dataset": ds, "metric_names": metric_names,
-            "rows": rows, "total": total,
-        })
-    return boards
+def find_benchmark_dataset(conn, task: str, dataset_slug: str) -> str | None:
+    for b in task_benchmarks(conn, task):
+        if b["slug"] == dataset_slug:
+            return b["dataset"]
+    return None
+
+
+def dataset_leaderboard(conn, task: str, dataset: str) -> dict:
+    """단일 (task, dataset) 리더보드. 첫 번째 지표를 숫자로 파싱해
+    내림차순 정렬하고, 파싱 불가 행은 뒤로 보낸다."""
+    rows = [
+        _loads(r, "metrics", "code_links")
+        for r in conn.execute(
+            "SELECT * FROM sota_rows WHERE task = ? AND dataset = ?",
+            (task, dataset),
+        )
+    ]
+    metric_names: list[str] = []
+    for r in rows:
+        if isinstance(r["metrics"], dict):
+            for m in r["metrics"]:
+                if m not in metric_names:
+                    metric_names.append(m)
+    # 지표 종류가 지나치게 많은 벤치마크는 상위(등장 빈도순 아님, 발견순) 일부만 컬럼으로
+    metric_names = metric_names[:8]
+    if metric_names:
+        key = metric_names[0]
+        rows.sort(
+            key=lambda r: _metric_value(
+                r["metrics"].get(key) if isinstance(r["metrics"], dict) else None
+            ),
+            reverse=True,
+        )
+    return {"dataset": dataset, "metric_names": metric_names, "rows": rows}
 
 
 def _metric_value(raw: object) -> float:

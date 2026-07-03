@@ -74,17 +74,28 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         return render(request, "sota.html", tasks=queries.sota_tasks(c))
 
     @app.get("/sota/{task_slug}", response_class=HTMLResponse)
-    def sota_task(request: Request, task_slug: str, full: int = 0):
+    def sota_task(request: Request, task_slug: str):
         c = conn()
         task = queries.find_task(c, task_slug)
         if not task:
             raise HTTPException(404, "task를 찾을 수 없습니다")
-        limit = None if full else 100
-        return render(request, "task.html", task=task, full=full,
-                      boards=queries.task_leaderboards(c, task, limit=limit))
+        return render(request, "task.html", task=task, task_slug=task_slug,
+                      benchmarks=queries.task_benchmarks(c, task))
 
-    # 원본 사이트의 /task/{slug} URL도 리더보드 페이지로 응답한다
+    # 원본 사이트의 /task/{slug} URL도 벤치마크 목록 페이지로 응답한다
     app.get("/task/{task_slug}", response_class=HTMLResponse)(sota_task)
+
+    @app.get("/sota/{task_slug}/{dataset_slug}", response_class=HTMLResponse)
+    def sota_board(request: Request, task_slug: str, dataset_slug: str):
+        c = conn()
+        task = queries.find_task(c, task_slug)
+        if not task:
+            raise HTTPException(404, "task를 찾을 수 없습니다")
+        dataset = queries.find_benchmark_dataset(c, task, dataset_slug)
+        if dataset is None:
+            raise HTTPException(404, "벤치마크를 찾을 수 없습니다")
+        return render(request, "board.html", task=task, task_slug=task_slug,
+                      board=queries.dataset_leaderboard(c, task, dataset))
 
     @app.get("/datasets", response_class=HTMLResponse)
     def datasets(request: Request, q: str = "", page: int = 1):
