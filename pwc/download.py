@@ -42,6 +42,7 @@ def download_all(data_dir: Path, only: list[str] | None = None) -> dict[str, Pat
         except Exception as e:  # noqa: BLE001 - 개별 덤프 실패는 보고 후 계속
             print(f"  실패: {e}", file=sys.stderr)
             continue
+        print(f"  선택된 덤프 파일: {data_file}")
         url = sources.resolve_url(repo, data_file)
         dest = raw_dir / f"{name}{_suffix_of(data_file)}"
         results[name] = download_file(url, dest)

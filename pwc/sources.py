@@ -32,8 +32,12 @@ def _get_json(url: str) -> object:
 
 
 def list_repo_files(repo_name: str) -> list[str]:
-    """데이터셋 저장소의 최상위 파일 경로 목록을 반환한다."""
-    url = f"{HF_HOST}/api/datasets/{ARCHIVE_ORG}/{repo_name}/tree/main"
+    """데이터셋 저장소의 전체 파일 경로 목록을 재귀적으로 반환한다.
+
+    아카이브 저장소는 데이터 파일을 하위 폴더에 두는 경우가 있어
+    recursive 조회가 필요하다.
+    """
+    url = f"{HF_HOST}/api/datasets/{ARCHIVE_ORG}/{repo_name}/tree/main?recursive=true"
     entries = _get_json(url)
     return [e["path"] for e in entries if e.get("type") == "file"]
 
@@ -43,8 +47,6 @@ def pick_data_file(files: list[str]) -> str:
     for suffix in (".json.gz", ".json"):
         candidates = [f for f in files if f.endswith(suffix)]
         if candidates:
-            # 파일이 여럿이면 가장 큰 이름 기준이 아니라 사전순 첫 파일을 쓰되,
-            # README 류는 확장자로 이미 걸러졌다.
             return sorted(candidates)[0]
     raise FileNotFoundError(
         f"JSON 덤프 파일을 찾지 못했습니다. 저장소 파일 목록: {files}"

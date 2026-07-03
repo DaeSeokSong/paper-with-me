@@ -8,6 +8,11 @@ def test_pick_data_file_prefers_gz():
     assert sources.pick_data_file(files) == "papers-with-abstracts.json.gz"
 
 
+def test_pick_data_file_handles_nested_paths():
+    files = [".gitattributes", "README.md", "data/evaluation-tables.json.gz"]
+    assert sources.pick_data_file(files) == "data/evaluation-tables.json.gz"
+
+
 def test_pick_data_file_falls_back_to_json():
     assert sources.pick_data_file(["README.md", "methods.json"]) == "methods.json"
 
