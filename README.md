@@ -44,7 +44,27 @@ python -m pwc build               # download + ingest 한 번에
 python -m pwc stats               # 적재 결과 요약
 ```
 
-> 참고: Hugging Face 접근이 차단된 환경에서는 GitHub Actions 워크플로(`.github/workflows/build-data.yml`)를 수동 실행(workflow_dispatch)하면 데이터 스냅샷 아티팩트를 빌드할 수 있습니다.
+> 참고: Hugging Face 접근이 차단된 환경에서는 GitHub Actions 워크플로(`.github/workflows/build-data.yml`)가 데이터 스냅샷 아티팩트를 빌드합니다 (워크플로 파일 변경 push 시 자동 실행, 수동 실행도 가능). 이 워크플로는 실데이터로 웹 앱 기능 점검(`scripts/smoke_check.py`)까지 수행합니다.
+
+## 웹 앱 (Phase 1 — 복원)
+
+원본 paperswithcode.com의 URL 구조와 핵심 기능을 재현한 읽기 전용 웹 앱입니다.
+기능별 복원 상태는 [docs/FEATURES.md](docs/FEATURES.md) 참고.
+
+```bash
+pip install -e ".[web]"
+PWC_DB=data/pwc.sqlite uvicorn app.main:app   # http://127.0.0.1:8000
+```
+
+| 경로 | 기능 |
+|---|---|
+| `/` | 홈 — Trending / Latest / 전체 통계 |
+| `/papers`, `/paper/{slug}` | 논문 목록·상세 (초록, 코드 구현, 벤치마크 결과) |
+| `/search?q=` | 제목·초록 전문 검색 (FTS5) |
+| `/sota`, `/sota/{task}` (= `/task/{task}`) | Browse State-of-the-Art, dataset별 리더보드 |
+| `/datasets`, `/dataset/{slug}` | 데이터셋 카탈로그 |
+| `/methods`, `/method/{slug}` | 방법론 카탈로그 |
+| `/trends` | 프레임워크 점유율 추이 |
 
 ### 테스트
 

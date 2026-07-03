@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Datasets · paper-with-me{% endblock %}
+{% block content %}
+<h1>Datasets</h1>
+<form action="/datasets" method="get">
+  <input type="search" name="q" placeholder="데이터셋 검색…" value="{{ q }}">
+</form>
+<div class="grid">
+  {% for d in datasets %}
+  <div class="card">
+    <h3><a href="/dataset/{{ d.name | slugify }}">{{ d.name }}</a></h3>
+    {% if d.full_name and d.full_name != d.name %}<div class="muted">{{ d.full_name }}</div>{% endif %}
+    <div class="muted">{% if d.num_papers %}논문 {{ "{:,}".format(d.num_papers) }}편{% endif %}</div>
+    {% for m in d.modalities %}<span class="badge">{{ m }}</span>{% endfor %}
+  </div>
+  {% else %}<p>결과가 없습니다.</p>{% endfor %}
+</div>
+<div class="pager">
+  {% if page > 1 %}<a href="/datasets?q={{ q | urlencode }}&page={{ page - 1 }}">← 이전</a>{% endif %}
+  {% if datasets | length == 20 %}<a href="/datasets?q={{ q | urlencode }}&page={{ page + 1 }}">다음 →</a>{% endif %}
+</div>
+{% endblock %}

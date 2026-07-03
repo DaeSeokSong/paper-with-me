@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Trends · paper-with-me{% endblock %}
+{% block content %}
+<h1>Trends</h1>
+<p class="muted">연도별 논문 구현 프레임워크 점유율 (%) — 원본 Papers with Code Trends 페이지 재현</p>
+
+{% if trends.years %}
+<table>
+  <tr><th>Framework</th>{% for y in trends.years %}<th>{{ y }}</th>{% endfor %}</tr>
+  {% for fw, values in trends.series.items() %}
+  <tr>
+    <td><b>{{ fw }}</b></td>
+    {% for v in values %}
+    <td>
+      {{ v }}
+      <div style="background:#21cbce;height:4px;border-radius:2px;width:{{ [v, 100] | min }}%"></div>
+    </td>
+    {% endfor %}
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p>데이터가 없습니다. <code>python -m pwc build</code>로 데이터를 적재하세요.</p>
+{% endif %}
+{% endblock %}

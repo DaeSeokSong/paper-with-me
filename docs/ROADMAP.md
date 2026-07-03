@@ -6,14 +6,16 @@
 
 - [x] 아카이브 데이터 소스 확정 — HF `pwc-archive` 5종 덤프, CC-BY-SA 4.0
 - [x] 데이터 파이프라인 — 덤프 다운로드 → SQLite 적재 (`pwc` 패키지)
-- [ ] 데이터 스냅샷 빌드 — GitHub Actions로 `pwc.sqlite` 생성/배포
-- [ ] 웹 앱 (읽기 전용 복원)
-  - [ ] 논문 목록/상세 + 전문 검색 (제목·초록 FTS)
-  - [ ] 논문-코드 저장소 링크 표시
-  - [ ] SOTA 리더보드 (task → dataset → 순위표, 원본 UI 구조 재현)
-  - [ ] 데이터셋 카탈로그
-  - [ ] 방법론(Methods) 카탈로그
-  - [ ] Browse by Task (task 트리 탐색)
+- [x] 데이터 스냅샷 빌드 — GitHub Actions로 `pwc.sqlite` 생성 + 실데이터 기능 점검
+- [x] 웹 앱 (읽기 전용 복원)
+  - [x] 논문 목록/상세 + 전문 검색 (제목·초록 FTS)
+  - [x] 논문-코드 저장소 링크 표시
+  - [x] SOTA 리더보드 (task → dataset → 순위표, 원본 UI 구조 재현)
+  - [x] 데이터셋 카탈로그
+  - [x] 방법론(Methods) 카탈로그
+  - [x] Browse by Task (`/sota` task 목록; 계층 트리 뷰는 개선 예정)
+  - [x] Trends (프레임워크 점유율)
+- [ ] 실데이터 스냅샷 기준 UI 다듬기 (대용량 리더보드 페이지네이션 등)
 
 ## Phase 2 — 현대화 (Modernize)
 

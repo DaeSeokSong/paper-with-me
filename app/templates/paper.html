@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}{{ paper.title }} · paper-with-me{% endblock %}
+{% block content %}
+<h1>{{ paper.title }}</h1>
+<div class="muted">
+  {{ paper.date or "" }}{% if paper.proceeding %} · {{ paper.proceeding }}{% endif %}
+  {% if paper.authors %} · {{ paper.authors | join(", ") }}{% endif %}
+</div>
+<p>
+  {% if paper.url_abs %}<a href="{{ paper.url_abs }}">Abstract</a> · {% endif %}
+  {% if paper.url_pdf %}<a href="{{ paper.url_pdf }}">PDF</a>{% endif %}
+  {% if paper.arxiv_id %} · arXiv:{{ paper.arxiv_id }}{% endif %}
+</p>
+{% if paper.abstract %}<p>{{ paper.abstract }}</p>{% endif %}
+
+{% if paper.tasks %}
+<h2>Tasks</h2>
+{% for t in paper.tasks %}<a class="badge" href="/task/{{ t | slugify }}">{{ t }}</a>{% endfor %}
+{% endif %}
+
+{% if paper.methods %}
+<h2>Methods</h2>
+{% for m in paper.methods %}
+  <a class="badge" href="/method/{{ (m.name if m.name is defined else m) | slugify }}">{{ m.name if m.name is defined else m }}</a>
+{% endfor %}
+{% endif %}
+
+<h2>Code ({{ repos | length }})</h2>
+{% for r in repos %}
+<div class="card">
+  <a href="{{ r.repo_url }}">{{ r.repo_url }}</a>
+  {% if r.is_official %}<span class="badge official">공식 구현</span>{% endif %}
+  {% if r.framework and r.framework != 'none' %}<span class="badge">{{ r.framework }}</span>{% endif %}
+</div>
+{% else %}<p class="muted">등록된 구현이 없습니다.</p>{% endfor %}
+
+{% if results %}
+<h2>Results ({{ results | length }})</h2>
+<table>
+  <tr><th>Task</th><th>Dataset</th><th>Model</th><th>Metrics</th></tr>
+  {% for r in results %}
+  <tr>
+    <td><a href="/task/{{ r.task | slugify }}">{{ r.task }}</a></td>
+    <td>{{ r.dataset }}</td>
+    <td>{{ r.model_name }}</td>
+    <td>{% for k, v in r.metrics.items() %}{{ k }}: {{ v }}{% if not loop.last %} · {% endif %}{% endfor %}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endblock %}

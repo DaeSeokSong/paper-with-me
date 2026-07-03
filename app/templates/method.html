@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}{{ method.name }} · Method · paper-with-me{% endblock %}
+{% block content %}
+<h1>{{ method.name }}</h1>
+{% if method.full_name and method.full_name != method.name %}<div class="muted">{{ method.full_name }}</div>{% endif %}
+<p class="muted">
+  {% if method.introduced_year %}{{ method.introduced_year }}년 도입{% endif %}
+  {% if method.num_papers %} · 논문 {{ "{:,}".format(method.num_papers) }}편에서 사용{% endif %}
+</p>
+{% if method.description %}<p>{{ method.description }}</p>{% endif %}
+{% if method.source_url %}
+<p>출처: <a href="{{ method.source_url }}">{{ method.source_title or method.source_url }}</a></p>
+{% endif %}
+{% if method.paper_url %}
+<p>소개 논문: <a href="/paper/{{ method.paper_url | paper_slug }}">{{ method.source_title or "보기" }}</a></p>
+{% endif %}
+{% for c in method.collections %}<span class="badge">{{ c.collection }}{% if c.area %} · {{ c.area }}{% endif %}</span>{% endfor %}
+{% endblock %}

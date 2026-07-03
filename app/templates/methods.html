@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Methods · paper-with-me{% endblock %}
+{% block content %}
+<h1>Methods</h1>
+<form action="/methods" method="get">
+  <input type="search" name="q" placeholder="방법론 검색…" value="{{ q }}">
+</form>
+<div class="grid">
+  {% for m in methods %}
+  <div class="card">
+    <h3><a href="/method/{{ m.url | paper_slug if m.url else m.name | slugify }}">{{ m.name }}</a></h3>
+    {% if m.full_name and m.full_name != m.name %}<div class="muted">{{ m.full_name }}</div>{% endif %}
+    <div class="muted">
+      {% if m.introduced_year %}{{ m.introduced_year }}년{% endif %}
+      {% if m.num_papers %} · 논문 {{ "{:,}".format(m.num_papers) }}편{% endif %}
+    </div>
+    {% for c in m.collections %}<span class="badge">{{ c.collection }}</span>{% endfor %}
+  </div>
+  {% else %}<p>결과가 없습니다.</p>{% endfor %}
+</div>
+<div class="pager">
+  {% if page > 1 %}<a href="/methods?q={{ q | urlencode }}&page={{ page - 1 }}">← 이전</a>{% endif %}
+  {% if methods | length == 20 %}<a href="/methods?q={{ q | urlencode }}&page={{ page + 1 }}">다음 →</a>{% endif %}
+</div>
+{% endblock %}

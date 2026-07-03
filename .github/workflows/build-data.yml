@@ -1,13 +1,18 @@
 name: Build data snapshot
 
-# 아카이브 덤프를 내려받아 SQLite 스냅샷을 빌드한다.
-# 아카이브는 불변 데이터이므로 수동 실행(workflow_dispatch)만 둔다.
+# 아카이브 덤프를 내려받아 SQLite 스냅샷을 빌드하고, 실데이터로 웹 앱의
+# 핵심 기능(검색, 리더보드, 트렌드 등)을 스모크 점검한다.
+# 이 워크플로 파일이 변경되어 push되면 자동 실행되고, 수동 실행도 가능하다.
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/workflows/build-data.yml"]
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -15,14 +20,17 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install pipeline
-        run: pip install -e ".[stream]"
+      - name: Install pipeline + web app
+        run: pip install -e ".[stream,web,dev]"
 
       - name: Download dumps and build SQLite
         run: python -m pwc build --data-dir data
 
       - name: Show stats
         run: python -m pwc stats --data-dir data
+
+      - name: Smoke check restored features against real data
+        run: PWC_DB=data/pwc.sqlite python scripts/smoke_check.py
 
       - name: Upload snapshot artifact
         uses: actions/upload-artifact@v4

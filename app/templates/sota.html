@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Browse State-of-the-Art · paper-with-me{% endblock %}
+{% block content %}
+<h1>Browse State-of-the-Art</h1>
+<p class="muted">{{ tasks | length }}개 벤치마크 task</p>
+<div class="grid">
+  {% for t in tasks %}
+  <div class="card">
+    <h3><a href="/sota/{{ t.slug }}">{{ t.task }}</a></h3>
+    <div class="muted">
+      {{ t.n_datasets }}개 벤치마크 · {{ t.n_rows }}개 결과
+      {% if t.parent_task %} · 상위: {{ t.parent_task }}{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

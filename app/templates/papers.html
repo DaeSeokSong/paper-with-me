@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Papers · paper-with-me{% endblock %}
+{% block content %}
+<h1>Papers</h1>
+{% for p in papers %}{% include "_paper_card.html" %}{% else %}<p>결과가 없습니다.</p>{% endfor %}
+<div class="pager">
+  {% if page > 1 %}<a href="/papers?page={{ page - 1 }}">← 이전</a>{% endif %}
+  {% if papers | length == 20 %}<a href="/papers?page={{ page + 1 }}">다음 →</a>{% endif %}
+</div>
+{% endblock %}

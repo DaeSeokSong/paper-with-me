@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}{{ task }} · SOTA · paper-with-me{% endblock %}
+{% block content %}
+<h1>{{ task }}</h1>
+{% for b in boards %}
+<h2>{{ b.dataset }}</h2>
+<table>
+  <tr>
+    <th class="rank">#</th><th>Model</th>
+    {% for m in b.metric_names %}<th>{{ m }}</th>{% endfor %}
+    <th>Paper</th><th>Code</th>
+  </tr>
+  {% for r in b.rows %}
+  <tr>
+    <td class="rank">{{ loop.index }}</td>
+    <td><b>{{ r.model_name }}</b></td>
+    {% for m in b.metric_names %}<td>{{ r.metrics.get(m, "–") }}</td>{% endfor %}
+    <td>
+      {% if r.paper_url %}<a href="/paper/{{ r.paper_url | paper_slug }}">{{ r.paper_title or "논문" }}</a>{% endif %}
+      <span class="muted">{{ r.paper_date or "" }}</span>
+    </td>
+    <td>{% for c in r.code_links %}<a href="{{ c.url }}">{{ c.title or "code" }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}<p>리더보드가 없습니다.</p>{% endfor %}
+{% endblock %}

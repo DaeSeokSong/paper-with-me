@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}paper-with-me{% endblock %}</title>
+<style>
+  :root { --blue: #21cbce; --dark: #0f1419; --link: #1a73e8; --border: #e5e7eb; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "Segoe UI", Roboto, "Noto Sans KR", sans-serif;
+         color: #222; background: #fff; }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  header { background: var(--dark); padding: 0 24px; }
+  header .inner { max-width: 1100px; margin: 0 auto; display: flex; align-items: center;
+                  gap: 20px; flex-wrap: wrap; }
+  header a.brand { color: #fff; font-weight: 700; font-size: 18px; padding: 14px 0; }
+  header a.brand span { color: var(--blue); }
+  header nav a { color: #cbd5e1; padding: 14px 4px; font-size: 14px; }
+  header nav a:hover { color: #fff; text-decoration: none; }
+  header form { margin-left: auto; }
+  header input { background: #1e2833; border: 1px solid #33404d; color: #fff;
+                 border-radius: 4px; padding: 7px 10px; width: 240px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px; }
+  h1 { font-size: 26px; } h2 { font-size: 20px; margin-top: 32px; }
+  .card { border: 1px solid var(--border); border-radius: 8px; padding: 16px 18px;
+          margin: 12px 0; }
+  .card h3 { margin: 0 0 6px; font-size: 17px; }
+  .muted { color: #667085; font-size: 13px; }
+  .badge { display: inline-block; background: #eef2f7; border-radius: 12px;
+           padding: 2px 10px; font-size: 12px; color: #334155; margin: 2px 4px 2px 0; }
+  .badge.official { background: #dcfce7; color: #166534; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0 24px; font-size: 14px; }
+  th, td { border-bottom: 1px solid var(--border); text-align: left; padding: 8px 10px; }
+  th { background: #f8fafc; }
+  .rank { color: #667085; width: 36px; }
+  .stats { display: flex; gap: 24px; flex-wrap: wrap; margin: 16px 0; }
+  .stats div { text-align: center; }
+  .stats b { display: block; font-size: 22px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+          gap: 12px; }
+  .pager { margin: 20px 0; display: flex; gap: 12px; }
+  footer { border-top: 1px solid var(--border); margin-top: 48px; padding: 20px 24px;
+           font-size: 13px; color: #667085; text-align: center; }
+</style>
+</head>
+<body>
+<header><div class="inner">
+  <a class="brand" href="/">paper<span>-with-</span>me</a>
+  <nav>
+    <a href="/papers">Papers</a>
+    <a href="/sota">Browse State-of-the-Art</a>
+    <a href="/datasets">Datasets</a>
+    <a href="/methods">Methods</a>
+    <a href="/trends">Trends</a>
+  </nav>
+  <form action="/search" method="get">
+    <input type="search" name="q" placeholder="논문 검색…" value="{{ q or '' }}">
+  </form>
+</div></header>
+<main>{% block content %}{% endblock %}</main>
+<footer>
+  Papers with Code 복원 프로젝트 · 데이터: <a href="https://huggingface.co/pwc-archive">pwc-archive</a>
+  (CC-BY-SA 4.0, 2025-07 스냅샷)
+</footer>
+</body>
+</html>

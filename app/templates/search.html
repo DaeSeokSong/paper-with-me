@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ q }} · 검색 · paper-with-me{% endblock %}
+{% block content %}
+<h1>검색{% if q %}: “{{ q }}”{% endif %}</h1>
+{% if not q %}<p class="muted">검색어를 입력하세요. 논문 제목과 초록에서 찾습니다.</p>{% endif %}
+{% for p in papers %}{% include "_paper_card.html" %}{% else %}{% if q %}<p>결과가 없습니다.</p>{% endif %}{% endfor %}
+<div class="pager">
+  {% if page > 1 %}<a href="/search?q={{ q | urlencode }}&page={{ page - 1 }}">← 이전</a>{% endif %}
+  {% if papers | length == 20 %}<a href="/search?q={{ q | urlencode }}&page={{ page + 1 }}">다음 →</a>{% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,10 @@
+<div class="card">
+  <h3><a href="/paper/{{ p.paper_url | paper_slug }}">{{ p.title }}</a></h3>
+  <div class="muted">
+    {{ p.date or "" }}{% if p.proceeding %} · {{ p.proceeding }}{% endif %}
+    {% if p.authors %} · {{ p.authors[:4] | join(", ") }}{% if p.authors | length > 4 %} 외{% endif %}{% endif %}
+    {% if p.repo_count %} · 구현 {{ p.repo_count }}개{% endif %}
+  </div>
+  {% if p.abstract %}<p class="muted">{{ p.abstract[:220] }}{% if p.abstract | length > 220 %}…{% endif %}</p>{% endif %}
+  {% for t in p.tasks %}<a class="badge" href="/task/{{ t | slugify }}">{{ t }}</a>{% endfor %}
+</div>
