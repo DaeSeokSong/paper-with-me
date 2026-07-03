@@ -58,6 +58,36 @@ def main() -> int:
     ).fetchall()
     print("  쿼리 플랜:", [tuple(p) for p in plan], flush=True)
 
+    # dataset_leaderboard 내부 단계 재현: 어느 후처리가 느린지 분해 계측
+    parsed = timed("행 조회 + JSON 파싱(_loads)", lambda: [
+        queries._loads(r, "metrics", "code_links")
+        for r in conn.execute(
+            "SELECT * FROM sota_rows WHERE task = ? AND dataset = ?",
+            (task, dataset),
+        )
+    ])
+
+    def build_metric_names():
+        names = []
+        for r in parsed:
+            if isinstance(r["metrics"], dict):
+                for m in r["metrics"]:
+                    if m not in names:
+                        names.append(m)
+        return names
+
+    metric_names = timed("지표명 수집", build_metric_names)
+    print(f"  지표명 수: {len(metric_names)}", flush=True)
+
+    key = metric_names[0] if metric_names else None
+    timed("첫 지표 기준 정렬", lambda: sorted(
+        parsed,
+        key=lambda r: queries._metric_value(
+            r["metrics"].get(key) if isinstance(r["metrics"], dict) else None
+        ),
+        reverse=True,
+    ) if key else parsed)
+
     board = timed("dataset_leaderboard 전체", queries.dataset_leaderboard,
                   conn, task, dataset)
 

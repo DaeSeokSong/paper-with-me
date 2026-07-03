@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS sota_rows (
     code_links  TEXT   -- JSON 배열
 );
 CREATE INDEX IF NOT EXISTS idx_sota_task_dataset ON sota_rows(task, dataset);
+CREATE INDEX IF NOT EXISTS idx_sota_paper ON sota_rows(paper_url);
 
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
