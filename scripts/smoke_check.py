@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -20,12 +21,27 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from app.main import create_app  # noqa: E402
 from app import queries  # noqa: E402
 
+# 페이지 응답시간 상한(초). CI 러너 변동성을 감안해 여유 있게 잡되,
+# 과거처럼 분 단위로 걸리는 회귀는 확실히 잡는다.
+SLOW = 20.0
+
 failures: list[str] = []
+_last_elapsed = 0.0
+
+
+def timed_get(client: TestClient, path: str, **kwargs):
+    global _last_elapsed
+    t0 = time.monotonic()
+    r = client.get(path, **kwargs)
+    _last_elapsed = time.monotonic() - t0
+    return r
 
 
 def check(name: str, ok: bool, detail: str = "") -> None:
     mark = "PASS" if ok else "FAIL"
-    print(f"[{mark}] {name}" + (f" — {detail}" if detail else ""))
+    print(f"[{mark}] {name}"
+          + (f" — {detail}" if detail else "")
+          + (f" ({_last_elapsed:.1f}s)" if _last_elapsed else ""))
     if not ok:
         failures.append(name)
 
@@ -49,42 +65,52 @@ def main() -> int:
     check("methods >= 1k", st["methods"] >= 1_000, f"{st['methods']:,}")
 
     client = TestClient(create_app(db_path))
+    slow_pages: list[tuple[str, float]] = []
 
-    r = client.get("/")
+    def get(path: str, **kwargs):
+        r = timed_get(client, path, **kwargs)
+        if _last_elapsed > SLOW:
+            slow_pages.append((path, _last_elapsed))
+        return r
+
+    r = get("/")
     check("홈(트렌딩/최신/통계)", r.status_code == 200 and "Trending" in r.text)
 
-    r = client.get("/paper/attention-is-all-you-need")
+    r = get("/paper/attention-is-all-you-need")
     check("논문 상세", r.status_code == 200 and "Attention" in r.text)
     check("논문-코드 링크", "github.com" in r.text)
 
-    r = client.get("/search", params={"q": "diffusion model"})
+    r = get("/search", params={"q": "diffusion model"})
     check("전문 검색", r.status_code == 200 and "/paper/" in r.text)
 
-    r = client.get("/sota")
+    r = get("/sota")
     check("SOTA task 목록", r.status_code == 200 and "Image Classification" in r.text)
 
-    r = client.get("/sota/image-classification")
+    r = get("/sota/image-classification")
     check("리더보드 (Image Classification/ImageNet)",
           r.status_code == 200 and "ImageNet" in r.text)
 
-    r = client.get("/task/semantic-segmentation")
+    r = get("/task/semantic-segmentation")
     check("원본 /task/ URL 호환", r.status_code == 200)
 
-    r = client.get("/datasets", params={"q": "coco"})
+    r = get("/datasets", params={"q": "coco"})
     check("데이터셋 검색", r.status_code == 200 and "COCO" in r.text)
 
-    r = client.get("/dataset/imagenet")
+    r = get("/dataset/imagenet")
     check("데이터셋 상세 + 벤치마크 연결", r.status_code == 200)
 
-    r = client.get("/methods", params={"q": "attention"})
+    r = get("/methods", params={"q": "attention"})
     check("방법론 검색", r.status_code == 200)
 
-    r = client.get("/method/transformer")
+    r = get("/method/transformer")
     check("방법론 상세 (Transformer)", r.status_code == 200)
 
-    r = client.get("/trends")
+    r = get("/trends")
     check("Trends (프레임워크 점유율)",
           r.status_code == 200 and "pytorch" in r.text.lower())
+
+    check(f"모든 페이지 응답 {SLOW:.0f}초 이내", not slow_pages,
+          ", ".join(f"{p} {t:.1f}s" for p, t in slow_pages))
 
     print()
     if failures:

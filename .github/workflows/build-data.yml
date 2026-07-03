@@ -7,10 +7,11 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    # 앱/스모크 체크만 바뀐 경우는 verify-app 워크플로가 아티팩트를 재사용해
+    # 검증하므로, 재빌드는 파이프라인 코드가 바뀔 때만 한다.
     paths:
       - ".github/workflows/build-data.yml"
       - "pwc/**"
-      - "scripts/smoke_check.py"
 
 jobs:
   build:

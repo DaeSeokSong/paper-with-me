@@ -1,0 +1,42 @@
+name: Verify app against data snapshot
+
+# 웹 앱 변경 시, 최신 데이터 스냅샷 아티팩트(pwc-sqlite)를 내려받아
+# 실데이터 기능 점검(응답시간 포함)을 빠르게 수행한다. 데이터 재빌드 없음.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "scripts/smoke_check.py"
+      - ".github/workflows/verify-app.yml"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install -e ".[stream,web,dev]"
+
+      - name: Download latest data snapshot artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          id=$(gh api "repos/${{ github.repository }}/actions/artifacts?name=pwc-sqlite&per_page=1" \
+               --jq '.artifacts[0].id')
+          echo "artifact id: $id"
+          gh api "repos/${{ github.repository }}/actions/artifacts/$id/zip" > snapshot.zip
+          mkdir -p data && unzip -o snapshot.zip -d data && rm snapshot.zip
+          ls -lah data
+
+      - name: Smoke check restored features against real data
+        run: PWC_DB=data/pwc.sqlite python scripts/smoke_check.py

@@ -2,8 +2,12 @@
 {% block title %}{{ task }} · SOTA · paper-with-me{% endblock %}
 {% block content %}
 <h1>{{ task }}</h1>
+{% if not full and boards | selectattr("total", "gt", 100) | list %}
+<p class="muted">대형 리더보드는 dataset당 상위 100개만 표시합니다.
+  <a href="?full=1">전체 보기</a></p>
+{% endif %}
 {% for b in boards %}
-<h2>{{ b.dataset }}</h2>
+<h2>{{ b.dataset }} <span class="muted">({{ b.total }}개 결과)</span></h2>
 <table>
   <tr>
     <th class="rank">#</th><th>Model</th>

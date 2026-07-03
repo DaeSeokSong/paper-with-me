@@ -37,6 +37,10 @@ def paper_slug(paper_url: str | None) -> str:
     return (paper_url or "").rstrip("/").rsplit("/", 1)[-1]
 
 
+def _db_key(conn) -> str:
+    return conn.execute("PRAGMA database_list").fetchone()[2]
+
+
 # ---------------------------------------------------------------- papers
 
 def latest_papers(conn, page: int = 1) -> list[dict]:
@@ -61,8 +65,13 @@ def trending_papers(conn, limit: int = 10) -> list[dict]:
 
 
 def get_paper(conn, slug: str) -> dict | None:
+    # 아카이브의 paper_url은 정규 형태라 PK 조회가 먼저 적중한다.
+    # LIKE 폴백은 접두사가 다른 예외 레코드용 (576k 행 풀스캔이므로 최후 수단).
     row = conn.execute(
-        "SELECT * FROM papers WHERE paper_url LIKE ?", (f"%/paper/{slug}",)
+        "SELECT * FROM papers WHERE paper_url = ?",
+        (f"https://paperswithcode.com/paper/{slug}",),
+    ).fetchone() or conn.execute(
+        "SELECT * FROM papers WHERE paper_url LIKE ? LIMIT 1", (f"%/paper/{slug}",)
     ).fetchone()
     return _loads(row, "authors", "tasks", "methods") if row else None
 
@@ -121,39 +130,61 @@ def sota_tasks(conn) -> list[dict]:
     return [dict(r) | {"slug": slugify(r["task"])} for r in rows]
 
 
+_task_maps: dict[str, dict[str, str]] = {}
+
+
 def find_task(conn, slug: str) -> str | None:
-    for r in conn.execute("SELECT DISTINCT task FROM sota_rows WHERE task IS NOT NULL"):
-        if slugify(r["task"]) == slug:
-            return r["task"]
-    return None
-
-
-def task_leaderboards(conn, task: str) -> list[dict]:
-    """task의 dataset별 리더보드. 첫 번째 지표를 숫자로 파싱해 내림차순 정렬을
-    시도하고, 파싱 불가 행은 원본 순서를 유지한 채 뒤에 둔다."""
-    datasets = [
-        r["dataset"] for r in conn.execute(
-            "SELECT DISTINCT dataset FROM sota_rows WHERE task = ? ORDER BY dataset",
-            (task,),
-        )
-    ]
-    boards = []
-    for ds in datasets:
-        rows = [
-            _loads(r, "metrics", "code_links")
+    """slug → task 이름. 목록은 DB 파일별로 1회만 만들어 캐시한다
+    (아카이브는 불변 데이터)."""
+    key = _db_key(conn)
+    if key not in _task_maps:
+        _task_maps[key] = {
+            slugify(r["task"]): r["task"]
             for r in conn.execute(
-                "SELECT * FROM sota_rows WHERE task = ? AND dataset = ?", (task, ds)
+                "SELECT DISTINCT task FROM sota_rows WHERE task IS NOT NULL"
             )
-        ]
+        }
+    return _task_maps[key].get(slug)
+
+
+def task_leaderboards(conn, task: str, limit: int | None = 100) -> list[dict]:
+    """task의 dataset별 리더보드.
+
+    행 전체를 단일 쿼리로 가져와 dataset별로 묶는다 (dataset별 개별 쿼리 금지).
+    첫 번째 지표를 숫자로 파싱해 내림차순 정렬하고, limit이 있으면 dataset당
+    상위 limit개만 돌려준다 (대형 리더보드의 응답 크기 제한).
+    """
+    by_dataset: dict[str, list[dict]] = {}
+    for r in conn.execute(
+        "SELECT * FROM sota_rows WHERE task = ? ORDER BY dataset", (task,)
+    ):
+        row = _loads(r, "metrics", "code_links")
+        by_dataset.setdefault(row["dataset"], []).append(row)
+
+    boards = []
+    for ds in sorted(by_dataset, key=lambda d: (d is None, d or "")):
+        rows = by_dataset[ds]
         metric_names: list[str] = []
         for r in rows:
-            for m in r["metrics"]:
-                if m not in metric_names:
-                    metric_names.append(m)
+            if isinstance(r["metrics"], dict):
+                for m in r["metrics"]:
+                    if m not in metric_names:
+                        metric_names.append(m)
         if metric_names:
             key = metric_names[0]
-            rows.sort(key=lambda r: _metric_value(r["metrics"].get(key)), reverse=True)
-        boards.append({"dataset": ds, "metric_names": metric_names, "rows": rows})
+            rows.sort(
+                key=lambda r: _metric_value(
+                    r["metrics"].get(key) if isinstance(r["metrics"], dict) else None
+                ),
+                reverse=True,
+            )
+        total = len(rows)
+        if limit is not None:
+            rows = rows[:limit]
+        boards.append({
+            "dataset": ds, "metric_names": metric_names,
+            "rows": rows, "total": total,
+        })
     return boards
 
 
