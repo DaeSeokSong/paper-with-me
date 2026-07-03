@@ -61,7 +61,8 @@ PWC_DB=data/pwc.sqlite uvicorn app.main:app   # http://127.0.0.1:8000
 | `/` | 홈 — Trending / Latest / 전체 통계 |
 | `/papers`, `/paper/{slug}` | 논문 목록·상세 (초록, 코드 구현, 벤치마크 결과) |
 | `/search?q=` | 제목·초록 전문 검색 (FTS5) |
-| `/sota`, `/sota/{task}` (= `/task/{task}`) | Browse State-of-the-Art, dataset별 리더보드 |
+| `/sota`, `/sota/{task}` (= `/task/{task}`) | Browse State-of-the-Art, task별 벤치마크 목록 |
+| `/sota/{task}/{dataset}` | dataset별 리더보드 순위표 |
 | `/datasets`, `/dataset/{slug}` | 데이터셋 카탈로그 |
 | `/methods`, `/method/{slug}` | 방법론 카탈로그 |
 | `/trends` | 프레임워크 점유율 추이 |

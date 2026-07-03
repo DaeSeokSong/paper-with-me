@@ -12,7 +12,8 @@
 | 논문 ↔ 코드 구현 (공식 구현 표시, 프레임워크) | ✅ | `/paper/{slug}` | ✅ |
 | 논문 검색 (제목·초록 전문 검색) | ✅ FTS5 | `/search` | ✅ |
 | Browse State-of-the-Art (task 목록) | ✅ | `/sota` | ✅ |
-| 리더보드 (task → dataset → 순위표) | ✅ 첫 지표 기준 정렬 | `/sota/{task}`, `/task/{task}` | ✅ |
+| task별 벤치마크 목록 | ✅ | `/sota/{task}`, `/task/{task}` | ✅ |
+| 리더보드 순위표 (dataset별 페이지, 원본 구조) | ✅ 최빈 지표 8개 컬럼, 첫 지표 기준 정렬 | `/sota/{task}/{dataset}` | ✅ (20초 응답 상한 게이트 포함) |
 | 논문별 Results (벤치마크 성적) | ✅ | `/paper/{slug}` | — |
 | Datasets 카탈로그 + 검색 | ✅ | `/datasets`, `/dataset/{slug}` | ✅ |
 | Methods 카탈로그 + 검색 | ✅ | `/methods`, `/method/{slug}` | ✅ |
