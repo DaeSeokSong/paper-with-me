@@ -64,20 +64,21 @@ def main(argv: list[str] | None = None) -> int:
 
     only_kwargs = dict(nargs="*", choices=list(sources.DUMPS), default=None,
                        help="특정 덤프만 처리 (기본: 전체)")
-    p = sub.add_parser("download", help="아카이브 덤프 다운로드")
-    p.add_argument("--only", **only_kwargs)
-    p.set_defaults(func=cmd_download)
-
-    p = sub.add_parser("ingest", help="덤프를 SQLite로 적재")
-    p.add_argument("--only", **only_kwargs)
-    p.set_defaults(func=cmd_ingest)
-
-    p = sub.add_parser("build", help="download + ingest")
-    p.add_argument("--only", **only_kwargs)
-    p.set_defaults(func=cmd_build)
-
-    p = sub.add_parser("stats", help="적재 결과 요약")
-    p.set_defaults(func=cmd_stats)
+    commands = [
+        ("download", "아카이브 덤프 다운로드", cmd_download, True),
+        ("ingest", "덤프를 SQLite로 적재", cmd_ingest, True),
+        ("build", "download + ingest", cmd_build, True),
+        ("stats", "적재 결과 요약", cmd_stats, False),
+    ]
+    for name, help_text, func, has_only in commands:
+        p = sub.add_parser(name, help=help_text)
+        # 서브커맨드 뒤에 와도 인식되도록 중복 정의한다. SUPPRESS 덕에
+        # 서브커맨드 쪽에서 생략하면 최상위 값이 유지된다.
+        p.add_argument("--data-dir", type=Path, default=argparse.SUPPRESS,
+                       help="데이터 디렉터리 (기본값: ./data)")
+        if has_only:
+            p.add_argument("--only", **only_kwargs)
+        p.set_defaults(func=func)
 
     args = parser.parse_args(argv)
     return args.func(args)
