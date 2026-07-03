@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import sys
 from pathlib import Path
 
@@ -37,9 +38,37 @@ def cmd_ingest(args: argparse.Namespace) -> int:
 
 
 def cmd_build(args: argparse.Namespace) -> int:
-    if cmd_download(args) != 0:
-        return 1
-    return cmd_ingest(args)
+    """덤프별로 다운로드 → 적재 → 원본 삭제를 순차 수행한다.
+
+    전체 덤프와 DB를 동시에 디스크에 두지 않아 CI 러너(디스크 ~14GB)에서도
+    안전하게 빌드된다.
+    """
+    conn = db.connect(args.data_dir / "pwc.sqlite")
+    # 대량 적재 전용 설정 (앱에서는 db.connect 기본값 사용)
+    conn.execute("PRAGMA synchronous=OFF")
+    ingested = 0
+    for name in args.only or list(sources.DUMPS):
+        results = download.download_all(args.data_dir, [name])
+        path = results.get(name)
+        if path is None:
+            continue
+        print(f"[{name}] {path} 적재 중...", flush=True)
+        rows = ingest.INGESTERS[name](conn, path)
+        print(f"  {rows:,} rows", flush=True)
+        ingested += 1
+        _remove(path)
+    if ingested:
+        print("FTS 인덱스 재구축 중...", flush=True)
+        db.rebuild_fts(conn)
+    conn.close()
+    return 0 if ingested else 1
+
+
+def _remove(path: Path) -> None:
+    if path.is_dir():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
 
 
 def cmd_stats(args: argparse.Namespace) -> int:

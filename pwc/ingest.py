@@ -48,7 +48,9 @@ def _iter_parquet(path: Path) -> Iterator[dict]:
     import pyarrow.parquet as pq
 
     pf = pq.ParquetFile(path)
-    for batch in pf.iter_batches(batch_size=2000):
+    # evaluation-tables는 행 하나가 수 MB짜리 중첩 구조라 배치를 크게 잡으면
+    # to_pylist()가 수 GB를 올려 OOM이 난다. 작은 배치로 스트리밍한다.
+    for batch in pf.iter_batches(batch_size=64):
         yield from batch.to_pylist()
 
 
@@ -82,6 +84,8 @@ def _executemany(conn: sqlite3.Connection, sql: str, rows: Iterable[tuple]) -> i
             conn.executemany(sql, batch)
             count += len(batch)
             batch.clear()
+            if count % 200_000 == 0:
+                print(f"  ... {count:,} rows", flush=True)
     if batch:
         conn.executemany(sql, batch)
         count += len(batch)
@@ -228,9 +232,9 @@ def ingest_all(conn: sqlite3.Connection, dumps: dict[str, Path]) -> dict[str, in
     """내려받은 덤프들을 순서대로 적재하고 이름 -> 행 수를 반환한다."""
     counts: dict[str, int] = {}
     for name, path in dumps.items():
-        print(f"[{name}] {path} 적재 중...")
+        print(f"[{name}] {path} 적재 중...", flush=True)
         counts[name] = INGESTERS[name](conn, path)
-        print(f"  {counts[name]:,} rows")
+        print(f"  {counts[name]:,} rows", flush=True)
     db.rebuild_fts(conn)
     return counts
 

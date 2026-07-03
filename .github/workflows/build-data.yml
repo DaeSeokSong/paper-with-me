@@ -15,7 +15,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
+    env:
+      PYTHONUNBUFFERED: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -30,7 +32,10 @@ jobs:
         run: python -m pwc build --data-dir data
 
       - name: Show stats
-        run: python -m pwc stats --data-dir data
+        run: |
+          python -m pwc stats --data-dir data
+          df -h /
+          ls -lah data
 
       - name: Smoke check restored features against real data
         run: PWC_DB=data/pwc.sqlite python scripts/smoke_check.py
