@@ -24,13 +24,48 @@ BATCH = 5000
 
 
 def iter_records(path: Path) -> Iterator[dict]:
-    """덤프 파일(.json 또는 .json.gz)의 최상위 배열 원소를 순회한다."""
+    """덤프의 레코드를 순회한다.
+
+    - .json / .json.gz 파일: 최상위 배열 원소
+    - 디렉터리 또는 .parquet 파일: parquet 샤드의 행 (HF 변환본)
+    """
+    if path.is_dir():
+        for shard in sorted(path.glob("*.parquet")):
+            yield from _iter_parquet(shard)
+        return
+    if path.suffix == ".parquet":
+        yield from _iter_parquet(path)
+        return
     opener = gzip.open if path.name.endswith(".gz") else open
     with opener(path, "rb") as f:
         if ijson is not None:
             yield from ijson.items(f, "item")
         else:
             yield from json.load(f)
+
+
+def _iter_parquet(path: Path) -> Iterator[dict]:
+    import pyarrow.parquet as pq
+
+    pf = pq.ParquetFile(path)
+    for batch in pf.iter_batches(batch_size=2000):
+        yield from batch.to_pylist()
+
+
+def _nested(value: object) -> object:
+    """중첩 필드 정규화.
+
+    parquet 변환본에서는 중첩 구조가 네이티브 리스트/구조체로 오기도 하고,
+    JSON 문자열로 직렬화되어 있기도 하다. 문자열이면 파싱을 시도한다.
+    """
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="replace")
+    if isinstance(value, str) and value.lstrip()[:1] in ("[", "{"):
+        try:
+            return json.loads(value)
+        except ValueError:
+            return value
+    return value
 
 
 def _dumps(value: object) -> str | None:
@@ -69,9 +104,9 @@ def ingest_papers(conn: sqlite3.Connection, path: Path) -> int:
             r.get("url_pdf"),
             r.get("proceeding"),
             r.get("date"),
-            _dumps(r.get("authors")),
-            _dumps(r.get("tasks")),
-            _dumps(r.get("methods")),
+            _dumps(_nested(r.get("authors"))),
+            _dumps(_nested(r.get("tasks"))),
+            _dumps(_nested(r.get("methods"))),
         )
         for r in iter_records(path)
     )
@@ -109,14 +144,19 @@ def ingest_datasets(conn: sqlite3.Connection, path: Path) -> int:
             r.get("full_name"),
             r.get("homepage"),
             r.get("description"),
-            (r.get("paper") or {}).get("url") if isinstance(r.get("paper"), dict) else None,
-            _dumps(r.get("modalities")),
-            _dumps(r.get("languages")),
+            _paper_url_of(r),
+            _dumps(_nested(r.get("modalities"))),
+            _dumps(_nested(r.get("languages"))),
             r.get("num_papers"),
         )
         for r in iter_records(path)
     )
     return _executemany(conn, sql, rows)
+
+
+def _paper_url_of(record: dict) -> str | None:
+    paper = _nested(record.get("paper"))
+    return paper.get("url") if isinstance(paper, dict) else None
 
 
 def ingest_methods(conn: sqlite3.Connection, path: Path) -> int:
@@ -130,12 +170,12 @@ def ingest_methods(conn: sqlite3.Connection, path: Path) -> int:
             r.get("name"),
             r.get("full_name"),
             r.get("description"),
-            (r.get("paper") or {}).get("url") if isinstance(r.get("paper"), dict) else None,
+            _paper_url_of(r),
             r.get("introduced_year"),
             r.get("source_url"),
             r.get("source_title"),
             r.get("num_papers"),
-            _dumps(r.get("collections")),
+            _dumps(_nested(r.get("collections"))),
         )
         for r in iter_records(path)
     )
@@ -153,22 +193,22 @@ def ingest_evaluations(conn: sqlite3.Connection, path: Path) -> int:
 
     def flatten(task_obj: dict, parent: str | None) -> Iterator[tuple]:
         task_name = task_obj.get("task")
-        for ds in task_obj.get("datasets") or []:
+        for ds in _nested(task_obj.get("datasets")) or []:
             dataset_name = ds.get("dataset")
-            sota = ds.get("sota") or {}
-            for row in sota.get("rows") or []:
+            sota = _nested(ds.get("sota")) or {}
+            for row in _nested(sota.get("rows")) or []:
                 yield (
                     task_name,
                     parent,
                     dataset_name,
                     row.get("model_name"),
-                    _dumps(row.get("metrics")),
+                    _dumps(_nested(row.get("metrics"))),
                     row.get("paper_url"),
                     row.get("paper_title"),
                     row.get("paper_date"),
-                    _dumps(row.get("code_links")),
+                    _dumps(_nested(row.get("code_links"))),
                 )
-        for sub in task_obj.get("subtasks") or []:
+        for sub in _nested(task_obj.get("subtasks")) or []:
             yield from flatten(sub, task_name)
 
     rows = (row for task in iter_records(path) for row in flatten(task, None))

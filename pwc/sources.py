@@ -42,14 +42,22 @@ def list_repo_files(repo_name: str) -> list[str]:
     return [e["path"] for e in entries if e.get("type") == "file"]
 
 
-def pick_data_file(files: list[str]) -> str:
-    """저장소 파일 중 실제 덤프 파일을 고른다 (.json.gz 우선, 다음 .json)."""
+def pick_data_files(files: list[str]) -> list[str]:
+    """저장소 파일 중 실제 덤프 파일들을 고른다.
+
+    우선순위: 원본 JSON 덤프(.json.gz > .json) 1개 → 없으면 HF가 변환한
+    Parquet 샤드 전체(data/train-0000X-of-0000N.parquet).
+    """
     for suffix in (".json.gz", ".json"):
         candidates = [f for f in files if f.endswith(suffix)]
         if candidates:
-            return sorted(candidates)[0]
+            return [sorted(candidates)[0]]
+    shards = sorted(f for f in files if f.endswith(".parquet"))
+    if shards:
+        return shards
     raise FileNotFoundError(
-        f"JSON 덤프 파일을 찾지 못했습니다. 저장소 파일 목록: {files}"
+        f"덤프 파일(.json/.json.gz/.parquet)을 찾지 못했습니다. "
+        f"저장소 파일 목록: {files}"
     )
 
 
