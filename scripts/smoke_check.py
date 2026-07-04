@@ -146,6 +146,11 @@ def main() -> int:
     r = get("/trends")
     check("Trends (프레임워크 점유율)",
           r.status_code == 200 and "pytorch" in r.text.lower())
+    print("  (진단) Rising Tasks 섹션: "
+          + ("표시" if "Rising Tasks" in r.text else "데이터 부족으로 숨김"))
+
+    r = get("/digest")
+    check("주간 다이제스트", r.status_code == 200 and "Weekly Digest" in r.text)
 
     r = get("/papers", params={"page": 2})
     check("논문 목록 페이지네이션", r.status_code == 200)

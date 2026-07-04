@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Weekly Digest · paper-with-me{% endblock %}
+{% block content %}
+<h1>Weekly Digest</h1>
+<p class="muted">최근 {{ digest.days }}일 신규 논문 {{ "{:,}".format(digest.total) }}편을
+분야별로 묶었습니다. 정렬: 인기 신호(HF 업보트·GitHub 스타·구현 수).</p>
+{% for g in digest.groups %}
+<h2 class="area-title">{{ g.area }} <span class="muted">{{ g.total }}편</span></h2>
+{% for p in g.papers %}{% include "_paper_card.html" %}{% endfor %}
+{% else %}
+<p>최근 수집된 논문이 없습니다. <a href="/papers">전체 논문 보기</a></p>
+{% endfor %}
+{% endblock %}

@@ -134,6 +134,8 @@
   .btn:hover { filter: brightness(1.06); text-decoration: none; color: #fff; }
   .repo-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
               padding: 10px 14px; margin: 8px 0; }
+  .glossary-row { display: flex; gap: 10px; align-items: baseline;
+                  flex-wrap: wrap; padding: 10px 14px; margin: 8px 0; }
   .rank { color: var(--muted); width: 36px; }
   /* 리더보드 상위권 하이라이트 — 1·2·3위 금·은·동 메달, 4~10위 옅은 강조.
      반투명 배경이라 라이트/다크 테마 모두에서 자연스럽다. */
@@ -195,6 +197,7 @@
     <a href="/datasets"{% if path.startswith("/dataset") %} aria-current="page"{% endif %}>Datasets</a>
     <a href="/methods"{% if path.startswith("/method") %} aria-current="page"{% endif %}>Methods</a>
     <a href="/trends"{% if path.startswith("/trends") %} aria-current="page"{% endif %}>Trends</a>
+    <a href="/digest"{% if path.startswith("/digest") %} aria-current="page"{% endif %}>Digest</a>
   </nav>
   <form action="/search" method="get" role="search">
     <input type="search" name="q" placeholder="논문 검색…" aria-label="논문 검색"

@@ -322,6 +322,180 @@ def _fts_query(q: str) -> str:
     return " ".join(phrases)
 
 
+def task_slugs(conn) -> set[str]:
+    """리더보드가 존재하는 task slug 집합 — 논문 카드의 태스크 태그를
+    링크로 만들지 라벨로 둘지 판단용 (죽은 링크 방지, 캐시됨)."""
+    return set(_slug_map(
+        conn, "task",
+        "SELECT DISTINCT task FROM sota_rows WHERE task IS NOT NULL"))
+
+
+# 제목 유사도 질의에서 변별력이 없는 상투어
+_TITLE_STOP = {
+    "with", "from", "that", "this", "using", "based", "toward", "towards",
+    "learning", "neural", "network", "networks", "deep", "model", "models",
+    "improving", "efficient", "robust", "novel", "approach", "method",
+}
+
+
+def similar_papers(conn, paper: dict, limit: int = 5) -> list[dict]:
+    """제목 키워드 FTS로 유사 논문을 찾는다 (Connected Papers류 수요 대응).
+
+    외부 API 없이 기존 FTS 인덱스만 사용 — 제목의 변별력 있는 단어들을
+    OR 매치해 bm25 순으로 돌려준다."""
+    if not pwc_db.has_fts(conn):
+        return []
+    words = [w.lower() for w in re.findall(r"[A-Za-z]{4,}",
+                                           paper.get("title") or "")
+             if w.lower() not in _TITLE_STOP][:6]
+    if not words:
+        return []
+    match = " OR ".join(f'"{w}"' for w in words)
+    try:
+        rows = conn.execute(
+            """SELECT p.* FROM papers_fts f JOIN papers p ON p.rowid = f.rowid
+               WHERE papers_fts MATCH ? AND p.paper_url != ?
+               ORDER BY rank LIMIT ?""",
+            (match, paper.get("paper_url") or "", limit),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    return [_loads(r, "authors", "tasks", "methods") for r in rows]
+
+
+def methods_glossary(conn, method_names: list) -> list[dict]:
+    """논문에 쓰인 방법론의 이름·설명 요약 — 용어가 이해를 막는 문제 대응."""
+    names = []
+    for m in method_names or []:
+        name = m.get("name") if isinstance(m, dict) else m
+        if isinstance(name, str) and name and name not in names:
+            names.append(name)
+    names = names[:8]
+    if not names:
+        return []
+    rows = conn.execute(
+        f"""SELECT name, description FROM methods
+            WHERE name IN ({','.join('?' * len(names))})""",
+        names,
+    ).fetchall()
+    by_name = {r["name"]: r["description"] for r in rows}
+    out = []
+    for name in names:
+        desc = (by_name.get(name) or "").strip()
+        if len(desc) > 180:
+            desc = desc[:180].rsplit(" ", 1)[0] + "…"
+        out.append({"name": name, "slug": slugify(name), "description": desc,
+                    "in_catalog": name in by_name})
+    return out
+
+
+_digest_cache: dict[tuple, dict] = {}
+
+
+def weekly_digest(conn) -> dict:
+    """최근 논문을 분야(area)별로 묶은 다이제스트 (HF Daily Papers류 수요).
+
+    최근 7일에 논문이 적으면 30일로 창을 넓힌다. 분야는 task→area 맵
+    (sota_rows)으로 정하고, 매핑이 없으면 'General'."""
+    import datetime as _dt
+    key = (_db_key(conn), _dt.date.today().isoformat())
+    if key in _digest_cache:
+        return _digest_cache[key]
+    days = 7
+    rows = conn.execute(
+        """SELECT p.*, s.hf_upvotes, s.github_stars,
+                  (SELECT COUNT(*) FROM repos r WHERE r.paper_url = p.paper_url)
+                  AS repo_count
+           FROM papers p LEFT JOIN signals s ON s.paper_url = p.paper_url
+           WHERE p.date >= date((SELECT MAX(date) FROM papers), '-7 days')"""
+    ).fetchall()
+    if len(rows) < 30:
+        days = 30
+        rows = conn.execute(
+            """SELECT p.*, s.hf_upvotes, s.github_stars,
+                      (SELECT COUNT(*) FROM repos r
+                       WHERE r.paper_url = p.paper_url) AS repo_count
+               FROM papers p LEFT JOIN signals s ON s.paper_url = p.paper_url
+               WHERE p.date >= date((SELECT MAX(date) FROM papers),
+                                    '-30 days')"""
+        ).fetchall()
+    papers = [_loads(r, "authors", "tasks", "methods") for r in rows]
+    papers.sort(key=lambda p: ((p.get("hf_upvotes") or 0) * 10
+                               + (p.get("github_stars") or 0) / 10
+                               + (p.get("repo_count") or 0)),
+                reverse=True)
+    area_of = dict(conn.execute(
+        "SELECT task, MAX(area) FROM sota_rows "
+        "WHERE task IS NOT NULL AND area IS NOT NULL GROUP BY task"))
+    groups: dict[str, list[dict]] = {}
+    for p in papers:
+        area = next((area_of[t] for t in p["tasks"] if t in area_of), None)
+        groups.setdefault(area or "General", []).append(p)
+    ordered = sorted(groups.items(), key=lambda kv: -len(kv[1]))
+    out = {"days": days,
+           "total": len(papers),
+           "groups": [{"area": a, "papers": ps[:8], "total": len(ps)}
+                      for a, ps in ordered]}
+    _digest_cache.clear()
+    _digest_cache[key] = out
+    return out
+
+
+_rising_cache: dict[tuple, list] = {}
+
+
+def rising_tasks(conn, top: int = 15) -> list[dict]:
+    """월별 논문 수 기준 급상승 task + 스파크라인 데이터.
+
+    아카이브가 특정 시점에 동결될 수 있으므로 '지금'이 아니라 데이터의
+    마지막 월을 앵커로 최근 8개월을 본다. json_each(JSON1) 미지원
+    환경에서는 빈 목록 (섹션 숨김)."""
+    key = _db_key(conn)
+    if key in _rising_cache:
+        return _rising_cache[key]
+    try:
+        rows = conn.execute(
+            """SELECT je.value AS task, substr(p.date, 1, 7) AS month,
+                      COUNT(*) AS n
+               FROM papers p, json_each(p.tasks) je
+               WHERE p.date IS NOT NULL AND p.tasks IS NOT NULL
+                 AND p.date >= date((SELECT MAX(date) FROM papers),
+                                    '-9 months')
+                 AND je.value IS NOT NULL
+               GROUP BY task, month"""
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    months = sorted({r["month"] for r in rows})[-8:]
+    if len(months) < 4:
+        _rising_cache.clear()
+        _rising_cache[key] = []
+        return []
+    counts: dict[str, dict[str, int]] = {}
+    for r in rows:
+        if r["month"] in months:
+            counts.setdefault(r["task"], {})[r["month"]] = r["n"]
+    scored = []
+    half = len(months) // 2
+    for task, by_month in counts.items():
+        series = [by_month.get(m, 0) for m in months]
+        recent, past = sum(series[half:]), sum(series[:half])
+        if recent < 5:
+            continue  # 표본이 너무 작은 태스크 제외
+        growth = (recent - past) / (past or 1)
+        scored.append({"task": task, "slug": slugify(task), "series": series,
+                       "recent": recent, "growth": round(growth, 2)})
+    scored.sort(key=lambda t: (-t["growth"], -t["recent"]))
+    out = scored[:top]
+    _rising_cache.clear()
+    _rising_cache[key] = out
+    if out:
+        out_months = months
+        for t in out:
+            t["months"] = out_months
+    return out
+
+
 # ---------------------------------------------------------------- sota
 
 def sota_tasks(conn) -> list[dict]:

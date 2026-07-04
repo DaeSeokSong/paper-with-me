@@ -68,7 +68,17 @@
 </div>
 {% endif %}
 
-{% if paper.methods %}
+{% if glossary %}
+<h2>Methods <span class="muted">이 논문이 사용한 방법론</span></h2>
+{% for g in glossary %}
+<div class="card glossary-row">
+  {% if g.in_catalog %}<a class="badge" href="/method/{{ g.slug }}">{{ g.name }}</a>
+  {% else %}<span class="badge">{{ g.name }}</span>{% endif %}
+  {% if g.description %}<span class="muted" lang="en">{{ g.description }}</span>
+  {% else %}<span class="muted">설명 없음</span>{% endif %}
+</div>
+{% endfor %}
+{% elif paper.methods %}
 <h2>Methods</h2>
 {% for m in paper.methods %}
   {% set mname = m.get("name") if m is mapping else m %}
@@ -76,5 +86,10 @@
     <a class="badge" href="/method/{{ mname | slugify }}">{{ mname }}</a>
   {% endif %}
 {% endfor %}
+{% endif %}
+
+{% if similar %}
+<h2>Similar Papers <span class="muted">제목 키워드 기반</span></h2>
+{% for p in similar %}{% include "_paper_card.html" %}{% endfor %}
 {% endif %}
 {% endblock %}

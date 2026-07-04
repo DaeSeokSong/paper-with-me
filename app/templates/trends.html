@@ -27,4 +27,37 @@
 {% else %}
 <p>데이터가 없습니다. <code>python -m pwc build</code>로 데이터를 적재하세요.</p>
 {% endif %}
+
+{% if rising %}
+<h2>Rising Tasks <span class="muted">최근 {{ rising[0].months | length }}개월
+논문 수 기준 급상승 task</span></h2>
+<div class="table-wrap">
+<table>
+  <tr><th>Task</th><th>추이</th><th>최근 논문</th><th>증가율</th></tr>
+  {% for t in rising %}
+  <tr>
+    <td><a href="/sota/{{ t.slug }}" lang="en">{{ t.task }}</a></td>
+    <td>
+      {#- 월별 논문 수 스파크라인 -#}
+      {% set mx = (t.series | max) or 1 %}
+      <svg viewBox="0 0 160 36" width="160" height="36" role="img"
+           aria-label="{{ t.task }} 월별 논문 수 추이">
+        {% set pts = [] %}
+        {% for v in t.series %}
+          {% set x = 4 + 152 * loop.index0 / (t.series | length - 1) %}
+          {% set y = 32 - 28 * v / mx %}
+          {% if pts.append("%.1f,%.1f" | format(x, y)) %}{% endif %}
+        {% endfor %}
+        <polyline points="{{ pts | join(' ') }}" fill="none"
+                  stroke="#21ccc7" stroke-width="2"/>
+      </svg>
+      <span class="sr-only">{% for v in t.series %}{{ t.months[loop.index0] }}: {{ v }}편{% if not loop.last %}, {% endif %}{% endfor %}</span>
+    </td>
+    <td>{{ t.recent }}편</td>
+    <td>{{ "+" if t.growth > 0 }}{{ (t.growth * 100) | round | int }}%</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endif %}
 {% endblock %}

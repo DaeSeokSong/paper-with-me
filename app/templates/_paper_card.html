@@ -9,5 +9,13 @@
     {% if p.source and p.source != 'archive' %}<span class="badge">{{ p.source }}</span>{% endif %}
   </div>
   {% if p.abstract %}<p class="muted">{{ p.abstract[:220] }}{% if p.abstract | length > 220 %}…{% endif %}</p>{% endif %}
-  {% for t in p.tasks %}<a class="badge" href="/task/{{ t | slugify }}">{{ t }}</a>{% endfor %}
+  {#- 태스크 태그: 리더보드가 있는 것만 링크 (없으면 라벨), 4개 상한 -#}
+  {% for t in p.tasks[:4] %}
+    {%- if task_slugs is defined and task_slugs and (t | slugify) in task_slugs -%}
+      <a class="badge" href="/task/{{ t | slugify }}">{{ t }}</a>
+    {%- else -%}
+      <span class="badge">{{ t }}</span>
+    {%- endif -%}
+  {% endfor %}
+  {%- if p.tasks | length > 4 %}<span class="muted">+{{ p.tasks | length - 4 }}</span>{% endif %}
 </div>

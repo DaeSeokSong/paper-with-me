@@ -102,7 +102,8 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         latest = [p for p in queries.latest_papers(c)
                   if p["paper_url"] not in seen]
         return render(request, "index.html", trending=trending,
-                      latest=latest, stats=queries.stats(c))
+                      latest=latest, stats=queries.stats(c),
+                      task_slugs=queries.task_slugs(c))
 
     @app.get("/search", response_class=HTMLResponse)
     def search(request: Request, q: str = "", page: Page = 1,
@@ -111,6 +112,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         papers = queries.search_papers(c, q, page) if q else []
         return render(request, "search.html", q=q, paper_q=q, page=page,
                       papers=papers, missing=missing,
+                      task_slugs=queries.task_slugs(c),
                       matches=queries.search_matches(c, q) if q else None)
 
     @app.get("/paper/{slug}", response_class=HTMLResponse)
@@ -128,6 +130,9 @@ def create_app(db_path: Path | None = None) -> FastAPI:
                     if queries.find_task(c, queries.slugify(t))}
         return render(request, "paper.html", paper=p,
                       linkable_tasks=linkable,
+                      similar=queries.similar_papers(c, p),
+                      glossary=queries.methods_glossary(c, p["methods"]),
+                      task_slugs=queries.task_slugs(c),
                       repos=(p.get("repos")
                              if p.get("stub")
                              else queries.paper_repos(c, p["paper_url"])),
@@ -140,6 +145,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         c = conn()
         return render(request, "papers.html", page=page,
                       papers=queries.latest_papers(c, page),
+                      task_slugs=queries.task_slugs(c),
                       total=queries.total_papers(c))
 
     @app.get("/sota", response_class=HTMLResponse)
@@ -234,10 +240,19 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             return _search_fallback(slug, kind="method")
         return render(request, "method.html", method=m)
 
+    @app.get("/digest", response_class=HTMLResponse)
+    def digest(request: Request):
+        c = conn()
+        return render(request, "digest.html",
+                      digest=queries.weekly_digest(c),
+                      task_slugs=queries.task_slugs(c))
+
     @app.get("/trends", response_class=HTMLResponse)
     def trends(request: Request):
         c = conn()
-        return render(request, "trends.html", trends=queries.framework_trends(c))
+        return render(request, "trends.html",
+                      trends=queries.framework_trends(c),
+                      rising=queries.rising_tasks(c))
 
     return app
 
