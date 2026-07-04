@@ -35,9 +35,18 @@
       수집기 (`hf-models`)
 - [x] arXiv 개정판(v2+) 추적 — lastUpdatedDate 수집 + 수집 논문 메타 갱신
 - [x] 한글·부분어 검색 — 신규 빌드부터 FTS trigram 토크나이저
+- [x] 리더보드 갱신 워크플로 — 커뮤니티 기여(PR) 기반 (contributions/)
+- [x] 원본 동등성 1차 정합 — 1차 사료(원본 HTML 캡처) 기반: 흰 헤더,
+      그라데이션 버튼, 차트 색, Rank/Year 컬럼, /sota 분야 그룹,
+      ground truth 수치 게이트(CIFAR-100 96.08)
 - [ ] is_official 추정 휴리스틱 (저자-저장소 소유자 매칭)
-- [ ] 리더보드 갱신 워크플로 — 커뮤니티 기여(PR) 기반 + 반자동 추출
 - [ ] UI 한국어/영어 전환
+- [ ] 원본 잔여 격차 (동등성 검수 기록):
+      리더보드 Extra Training Data/Tags/Result 컬럼(덤프 필드 확인 필요),
+      논문 카드 썸네일·"Ranked #N" 스파크라인 배지,
+      /datasets 좌측 필터 패널(모달리티/task/언어),
+      Methods 인덱스 카테고리 카드, task 페이지 Papers 목록·
+      Most implemented 섹션, 원본 webfont 서체
 
 ## Phase 4 — 앱 (App)
 
