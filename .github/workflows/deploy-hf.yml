@@ -1,0 +1,47 @@
+name: Deploy to Hugging Face
+
+# 최신 데이터 스냅샷을 HF Datasets에 올리고 Docker Space를 동기화한다.
+# update-data(03:00 UTC) 이후인 04:30 UTC에 매일 실행 + 앱/배포 구성 변경 시.
+# HF_TOKEN 시크릿이 없으면 안내만 하고 정상 종료한다.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 4 * * *"
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "pwc/**"
+      - "Dockerfile"
+      - "scripts/deploy_hf.py"
+      - ".github/workflows/deploy-hf.yml"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      PYTHONUNBUFFERED: "1"
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install huggingface_hub
+
+      - name: Download latest data snapshot artifact
+        if: env.HF_TOKEN != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          id=$(gh api "repos/${{ github.repository }}/actions/artifacts?name=pwc-sqlite&per_page=1" \
+               --jq '.artifacts[0].id')
+          gh api "repos/${{ github.repository }}/actions/artifacts/$id/zip" > snapshot.zip
+          mkdir -p data && unzip -o snapshot.zip -d data && rm snapshot.zip
+
+      - name: Deploy to Hugging Face (data + Space)
+        run: python scripts/deploy_hf.py

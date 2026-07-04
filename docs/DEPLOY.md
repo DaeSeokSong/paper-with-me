@@ -2,6 +2,15 @@
 
 읽기 위주 트래픽 + SQLite 단일 파일 구조라 단일 인스턴스로 충분하다.
 
+## 확정된 구조: Hugging Face Spaces
+
+- **HF Datasets** (`{user}/pwc-restore-data`): 데이터 스냅샷 영구 저장 (매일 갱신)
+- **HF Docker Space** (`{user}/paper-with-me`): 서비스 구동. 컨테이너 시작 시
+  `app/bootstrap.py`가 Datasets에서 스냅샷을 내려받는다 (`PWC_DATA_REPO` 환경변수)
+- `deploy-hf.yml` 워크플로가 위 두 리포를 자동 생성·동기화한다.
+  `HF_TOKEN`(write) 시크릿만 등록하면 끝.
+- GitHub Pages는 정적 호스팅 전용이라 서버 앱(13GB DB)을 올릴 수 없어 제외했다.
+
 ## 공통 준비
 
 1. 데이터 스냅샷 확보 — GitHub Actions의 `pwc-sqlite` 아티팩트 다운로드

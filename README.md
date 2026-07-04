@@ -104,7 +104,22 @@ tests/          오프라인 실행 가능한 테스트 (fixtures 포함)
 docs/           로드맵, 아키텍처 문서
 ```
 
+## 배포 (Phase 3)
+
+**GitHub = 코드·CI·데이터 빌드, Hugging Face = 데이터 저장 + 서비스** 구조입니다.
+
+- `Deploy to Hugging Face` 워크플로가 매일 스냅샷을 HF Datasets(`pwc-restore-data`)에
+  올리고 Docker Space(`paper-with-me`)를 동기화합니다.
+- 필요 설정: HF write 토큰을 GitHub 리포 **Settings → Secrets and variables →
+  Actions**에 `HF_TOKEN`으로 등록 (없으면 배포 단계는 조용히 건너뜁니다).
+- 로컬/자체 서버: `docker build -t paper-with-me . && docker run -p 8000:8000 -v ./data:/data paper-with-me`
+- 상세: [docs/DEPLOY.md](docs/DEPLOY.md)
+
 ## 라이선스
 
+- 코드: [AGPL-3.0](LICENSE) — 이 코드를 수정해 서비스로 운영하는 경우에도 소스 공개 의무가 있습니다.
 - 데이터: [CC-BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) (원 출처: Papers with Code / `pwc-archive`)
-- 코드: 추후 결정
+
+> 본 프로젝트는 커뮤니티가 보존한 공개 데이터를 기반으로 한 **비공식 복원 프로젝트**이며,
+> Meta 및 원 paperswithcode.com 운영진과 무관합니다. 코드는 원본 서비스의 코드를
+> 사용하지 않고 전부 새로 작성되었습니다.
