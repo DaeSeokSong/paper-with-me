@@ -192,6 +192,10 @@ def live_check(base: str) -> bool:
     if "96.08" not in html:
         print("[deploy] 라이브 리더보드에 ground truth(96.08)가 없습니다")
         return False
+    # 재빌드 스냅샷 배포 확인용 진단 — 값이 있는 스냅샷에서만 컬럼이 뜬다
+    print("[deploy] 라이브 Extra Training Data 컬럼: "
+          + ("표시됨" if "Extra Training Data" in html else "없음(재빌드 전 스냅샷)"),
+          flush=True)
     broken = []
     for href in sorted(set(re.findall(r'href="(/paper/[^"]+)"', html))):
         last_err = None

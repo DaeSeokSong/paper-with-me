@@ -110,6 +110,24 @@ def main() -> int:
           'class="rank-gold"' in r.text and 'class="rank-top"' in r.text
           and "페이지당" in r.text)
 
+    # Extra Training Data: 재빌드된 스냅샷에 값이 있으면 표에 컬럼이 떠야
+    # 한다 (구 스냅샷은 전부 NULL이라 컬럼 없음이 정상 — SKIP 처리)
+    etd_total = conn.execute(
+        "SELECT COUNT(*) FROM sota_rows WHERE uses_additional_data = 1"
+    ).fetchone()[0]
+    etd_cifar = conn.execute(
+        """SELECT COUNT(*) FROM sota_rows
+           WHERE uses_additional_data = 1 AND dataset = 'CIFAR-100'
+             AND task = 'Image Classification'"""
+    ).fetchone()[0]
+    print(f"  (진단) uses_additional_data=1 행: 전체 {etd_total:,},"
+          f" CIFAR-100 {etd_cifar:,}")
+    if etd_cifar:
+        r2 = get("/sota/image-classification/cifar-100?per=100")
+        check("Extra Training Data 컬럼 렌더링", "Extra Training Data" in r2.text)
+    else:
+        print("[SKIP] Extra Training Data 컬럼 — 스냅샷에 해당 값 없음(재빌드 전)")
+
     r = get("/task/semantic-segmentation")
     check("원본 /task/ URL 호환", r.status_code == 200)
 
