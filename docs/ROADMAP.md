@@ -55,6 +55,14 @@
       (contributions/ PR)로 정정·검증 가능
 - [ ] 자동 추출 고도화 — 본문(PDF) 표 파싱, 지표 별칭 사전 확대,
       HF Open LLM Leaderboard 등 살아있는 리더보드 소스 연동
+- [x] 전수 크롤 점검 게이트 — 렌더링된 모든 내부 링크 BFS 순회
+      (verify-app, 실데이터 3,000페이지)
+- [x] 니즈 검증 기반 신규 기능 5종 (인터넷 실수요 조사로 근거 확인):
+      논문 카드 태스크 태그 정비, Similar Papers(제목 FTS),
+      /digest 주간 분야별 다이제스트, Trends Rising Tasks 스파크라인,
+      논문 페이지 Methods 용어집
+- [ ] TLDR 한 줄 요약 — 수요 근거 최상위(Semantic Scholar 6천만 편)이나
+      LLM API 또는 Semantic Scholar API 연동 필요 (비용 검토 후)
 - [ ] 원본 잔여 격차 (동등성 검수 기록):
       리더보드 Tags/Result 컬럼,
       논문 카드 썸네일·"Ranked #N" 스파크라인 배지,
