@@ -14,6 +14,8 @@ on:
       - "pwc/**"
       - "Dockerfile"
       - "scripts/deploy_hf.py"
+      # 배포 전 게이트가 이 스크립트를 실행하므로 변경 시 재배포 검증 필요
+      - "scripts/smoke_check.py"
       - ".github/workflows/deploy-hf.yml"
 
 permissions:
