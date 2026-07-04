@@ -2,6 +2,10 @@
 
 > Papers with Code 복원 프로젝트 — 사라진 paperswithcode.com을 되살리고, 현재 시대에 맞게 발전시켜 다시 배포합니다.
 
+**🌐 서비스: https://khansong-paper-with-me.hf.space**
+([HF Space](https://huggingface.co/spaces/KhanSong/paper-with-me) ·
+[데이터 스냅샷](https://huggingface.co/datasets/KhanSong/pwc-restore-data))
+
 ## 배경
 
 [Papers with Code](https://paperswithcode.com)는 ML 논문·코드 구현·SOTA 리더보드·데이터셋·방법론(Methods)을 한곳에서 탐색할 수 있던 서비스였으나, 2025년 7월 Meta가 서비스를 종료하면서 도메인이 Hugging Face의 Trending Papers로 리다이렉트되고 기존 기능(리더보드 9,300여 개, 논문-코드 링크 약 8만 건, 데이터셋 5,600여 개)은 사라졌습니다.
