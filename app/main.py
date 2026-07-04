@@ -96,11 +96,16 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     def paper(request: Request, slug: str):
         c = conn()
         p = queries.get_paper(c, slug)
-        if not p:
+        if p:
+            return render(request, "paper.html", paper=p,
+                          repos=queries.paper_repos(c, p["paper_url"]),
+                          results=queries.paper_results(c, p["paper_url"]))
+        # papers 덤프에 없어도 리더보드가 참조하는 논문이면 스텁 페이지 제공
+        stub = queries.get_paper_stub(c, slug)
+        if not stub:
             raise HTTPException(404, "논문을 찾을 수 없습니다")
-        return render(request, "paper.html", paper=p,
-                      repos=queries.paper_repos(c, p["paper_url"]),
-                      results=queries.paper_results(c, p["paper_url"]))
+        return render(request, "paper.html", paper=stub,
+                      repos=stub["repos"], results=stub["results"])
 
     @app.get("/papers", response_class=HTMLResponse)
     def papers(request: Request, page: Page = 1):

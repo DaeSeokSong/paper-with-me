@@ -67,10 +67,22 @@
            margin: 2px 4px 2px 0; }
   .badge.official { background: #dcfce7; color: #166534; }
   .table-wrap { overflow-x: auto; }
-  table { border-collapse: collapse; width: 100%; margin: 10px 0 24px; font-size: 14px; }
+  /* 표는 main의 overflow-wrap:anywhere를 물려받으면 좁은 화면에서 헤더가
+     한 글자씩 세로로 깨진다 — 표 내부는 일반 줄바꿈 + 가로 스크롤로 처리 */
+  table { border-collapse: collapse; width: 100%; margin: 10px 0 24px;
+          font-size: 14px; overflow-wrap: normal; }
   th, td { border-bottom: 1px solid var(--border); text-align: left; padding: 8px 10px;
            vertical-align: top; }
-  th { background: var(--th-bg); }
+  th { background: var(--th-bg); white-space: nowrap; }
+  td { overflow-wrap: break-word; max-width: 420px; }
+  .paper-meta { margin-bottom: 16px; }
+  .abstract { max-width: 800px; line-height: 1.65; }
+  .btn-row { display: flex; gap: 10px; align-items: center; margin: 16px 0 8px; }
+  .btn { display: inline-block; border: 1px solid var(--border); border-radius: 6px;
+         padding: 7px 16px; font-size: 14px; font-weight: 600; }
+  .btn:hover { background: var(--badge-bg); text-decoration: none; }
+  .repo-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+              padding: 10px 14px; margin: 8px 0; }
   .rank { color: var(--muted); width: 36px; }
   .stats { display: flex; gap: 24px; flex-wrap: wrap; margin: 16px 0; }
   .stats div { text-align: center; }

@@ -129,6 +129,27 @@ def main() -> int:
     check("404가 HTML 에러 페이지로 렌더링",
           r.status_code == 404 and "<html" in r.text)
 
+    # 리더보드 → 논문 페이지 연결 무결성 (papers 덤프에 없는 논문은 스텁으로)
+    sample = conn.execute(
+        """SELECT s.paper_url FROM sota_rows s
+           WHERE s.paper_url LIKE 'https://paperswithcode.com/paper/%'
+           ORDER BY s.id LIMIT 5"""
+    ).fetchall()
+    linked_ok = True
+    for row in sample:
+        slug = row["paper_url"].rstrip("/").rsplit("/", 1)[-1]
+        if timed_get(client, f"/paper/{slug}").status_code != 200:
+            linked_ok = False
+            print(f"  깨진 논문 링크: /paper/{slug}")
+    check("리더보드 논문 링크 연결 (스텁 폴백 포함)", linked_ok)
+
+    missing = conn.execute(
+        """SELECT COUNT(DISTINCT s.paper_url) FROM sota_rows s
+           LEFT JOIN papers p ON p.paper_url = s.paper_url
+           WHERE p.paper_url IS NULL AND s.paper_url IS NOT NULL"""
+    ).fetchone()[0]
+    print(f"  (진단) papers 덤프에 없는 리더보드 논문: {missing:,}편 — 스텁으로 서비스")
+
     # Phase 2 수집분이 검색에 반영되는지 (수집분이 있는 스냅샷에서만)
     fresh = conn.execute(
         "SELECT paper_url, title FROM papers WHERE source != 'archive' "

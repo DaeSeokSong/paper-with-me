@@ -46,6 +46,78 @@ def test_paper_404(client):
     assert client.get("/paper/no-such-paper").status_code == 404
 
 
+def test_paper_stub_for_leaderboard_only_papers(tmp_path):
+    """papers 덤프에 없지만 리더보드가 참조하는 논문은 404 대신 스텁
+    전용 페이지(제목·결과·코드 링크)를 제공한다 — 페이퍼 스터디 동선 유지."""
+    import json as _json
+
+    from pwc import db as pwc_db
+    db_path = tmp_path / "stub.sqlite"
+    conn = pwc_db.connect(db_path)
+    conn.execute(
+        "INSERT INTO sota_rows (task,parent_task,dataset,model_name,metrics,"
+        "paper_url,paper_title,paper_date,code_links) VALUES (?,?,?,?,?,?,?,?,?)",
+        ("Image Classification", None, "CIFAR-100", "EffNet-L2 (SAM)",
+         _json.dumps({"Percentage correct": "96.08"}),
+         "https://paperswithcode.com/paper/sharpness-aware-minimization",
+         "Sharpness-Aware Minimization", "2020-10-03",
+         _json.dumps([{"title": "davda54/sam", "url": "https://github.com/davda54/sam"}])),
+    )
+    conn.commit()
+    conn.close()
+    c = TestClient(create_app(db_path))
+    r = c.get("/paper/sharpness-aware-minimization")
+    assert r.status_code == 200
+    assert "Sharpness-Aware Minimization" in r.text
+    assert "davda54/sam" in r.text
+    assert "초록" in r.text  # 초록 부재 안내
+
+
+def test_board_caps_code_links(tmp_path):
+    import json as _json
+
+    from pwc import db as pwc_db
+    db_path = tmp_path / "cap.sqlite"
+    conn = pwc_db.connect(db_path)
+    links = [{"title": f"repo{i}", "url": f"https://github.com/x/r{i}"}
+             for i in range(6)]
+    conn.execute(
+        "INSERT INTO sota_rows (task,parent_task,dataset,model_name,metrics,"
+        "paper_url,paper_title,paper_date,code_links) VALUES (?,?,?,?,?,?,?,?,?)",
+        ("T", None, "DS", "M", _json.dumps({"Acc": "1"}),
+         "https://paperswithcode.com/paper/p", "P", "2020-01-01",
+         _json.dumps(links)),
+    )
+    conn.commit()
+    conn.close()
+    c = TestClient(create_app(db_path))
+    r = c.get("/sota/t/ds")
+    assert "repo2" in r.text and "repo3" not in r.text
+    assert "+3" in r.text  # 나머지는 논문 페이지로
+
+
+def test_empty_metric_columns_pruned(tmp_path):
+    import json as _json
+
+    from pwc import db as pwc_db
+    db_path = tmp_path / "prune.sqlite"
+    conn = pwc_db.connect(db_path)
+    conn.row_factory = __import__("sqlite3").Row
+    conn.execute(
+        "INSERT INTO sota_rows (task,parent_task,dataset,model_name,metrics,"
+        "paper_url,paper_title,paper_date,code_links,metrics_order) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        ("T", None, "DS", "M", _json.dumps({"Accuracy": "96"}),
+         "https://x/paper/p", "P", "2020-01-01", "[]",
+         _json.dumps(["Accuracy", "PARAMS", "Top 1 Accuracy"])),
+    )
+    conn.commit()
+    from app import queries
+    board = queries.dataset_leaderboard(conn, "T", "DS")
+    assert board["metric_names"] == ["Accuracy"]  # 빈 컬럼 제거
+    conn.close()
+
+
 def test_search(client):
     r = client.get("/search", params={"q": "attention"})
     assert r.status_code == 200

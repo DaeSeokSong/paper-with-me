@@ -21,7 +21,9 @@
       <span class="muted">{{ r.paper_date or "" }}</span>
     </td>
     <td>
-      {%- for c in r.code_links -%}
+      {#- 코드 링크가 수십 개인 행이 표를 폭파시키지 않도록 3개까지만 표시하고,
+          전체 목록은 논문 페이지에서 제공한다 -#}
+      {%- for c in r.code_links[:3] -%}
         {%- if c is mapping and c.get("url") -%}
           <a href="{{ c.get('url') }}">{{ c.get("title") or "code" }}</a>
         {%- elif c is string -%}
@@ -29,6 +31,9 @@
         {%- endif -%}
         {%- if not loop.last %} · {% endif -%}
       {%- endfor -%}
+      {%- if r.code_links | length > 3 and r.paper_url %}
+        · <a href="/paper/{{ r.paper_url | paper_slug }}">+{{ r.code_links | length - 3 }}</a>
+      {%- endif -%}
     </td>
   </tr>
   {% endfor %}

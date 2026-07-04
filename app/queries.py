@@ -115,6 +115,43 @@ def get_paper(conn, slug: str) -> dict | None:
     return _loads(row, "authors", "tasks", "methods") if row else None
 
 
+def get_paper_stub(conn, slug: str) -> dict | None:
+    """papers 덤프에 없지만 리더보드(sota_rows)가 참조하는 논문의 스텁.
+
+    아카이브의 evaluation-tables는 papers-with-abstracts에 없는 논문도
+    참조한다 — 리더보드에서 클릭한 논문이 404로 끊기지 않도록, 리더보드
+    데이터로 초록 없는 전용 페이지를 구성한다.
+    """
+    if not re.fullmatch(r"[a-z0-9-]{1,200}", slug):
+        return None
+    url = f"https://paperswithcode.com/paper/{slug}"
+    rows = [
+        _loads(r, "metrics", "code_links")
+        for r in conn.execute(
+            "SELECT * FROM sota_rows WHERE paper_url = ? ORDER BY id", (url,)
+        )
+    ]
+    if not rows:
+        return None
+    repos: dict[str, dict] = {}
+    for r in rows:
+        for c in r["code_links"]:
+            link = c.get("url") if isinstance(c, dict) else (
+                c if isinstance(c, str) else None)
+            if link and link not in repos:
+                repos[link] = {"repo_url": link, "is_official": None,
+                               "framework": None, "stars": None}
+    return {
+        "paper_url": url,
+        "title": rows[0].get("paper_title") or slug.replace("-", " "),
+        "date": rows[0].get("paper_date"),
+        "abstract": None, "authors": [], "tasks": [], "methods": [],
+        "arxiv_id": None, "url_abs": None, "url_pdf": None,
+        "proceeding": None, "source": "archive", "stub": True,
+        "repos": list(repos.values()), "results": rows,
+    }
+
+
 def paper_repos(conn, paper_url: str) -> list[dict]:
     rows = conn.execute(
         "SELECT * FROM repos WHERE paper_url = ? ORDER BY is_official DESC",
@@ -248,6 +285,12 @@ def dataset_leaderboard(conn, task: str, dataset: str) -> dict:
             m for r in rows if isinstance(r["metrics"], dict) for m in r["metrics"]
         )
         metric_names = [m for m, _ in counts.most_common(8)]
+    # 값이 하나도 없는 지표는 빈 컬럼만 만든다 — 표시 대상에서 제외
+    metric_names = [
+        m for m in metric_names
+        if any(isinstance(r["metrics"], dict) and r["metrics"].get(m)
+               for r in rows)
+    ]
     return {"dataset": dataset, "metric_names": metric_names[:8], "rows": rows}
 
 
