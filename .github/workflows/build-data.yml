@@ -13,6 +13,10 @@ on:
       - ".github/workflows/build-data.yml"
       - "pwc/**"
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   build:
     runs-on: ubuntu-latest

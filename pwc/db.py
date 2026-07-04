@@ -85,6 +85,13 @@ CREATE TABLE IF NOT EXISTS signals (
     hf_upvotes   INTEGER,
     updated_at   TEXT
 );
+
+-- GitHub 저장소 검색을 이미 수행한 논문 기록 — 0건 논문이 매일 같은
+-- 검색을 재소모하며 백로그를 막는 것을 방지한다
+CREATE TABLE IF NOT EXISTS repo_search_log (
+    paper_url   TEXT PRIMARY KEY,
+    searched_at TEXT
+);
 """
 
 # 기존 스냅샷 DB에도 적용되는 컬럼 추가. ALTER는 IF NOT EXISTS가 없으므로

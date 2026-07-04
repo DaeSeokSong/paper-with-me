@@ -94,3 +94,29 @@ def test_ingest_is_idempotent(conn):
     ingest.ingest_papers(conn, FIXTURES / "papers.json")
     ingest.ingest_papers(conn, FIXTURES / "papers.json")
     assert conn.execute("SELECT COUNT(*) FROM papers").fetchone()[0] == 2
+
+
+def test_paper_pk_fallback_and_skip():
+    """paper_url 부재 시 제목 slug로 정규 URL 생성 (앱 라우팅과 일치),
+    산출 불가 레코드는 스킵(None) — NULL PK 중복 증식 방지."""
+    assert ingest._paper_pk({"paper_url": "https://x/paper/a"}) == "https://x/paper/a"
+    assert ingest._paper_pk({"title": "A Cool Paper!"}) == \
+        "https://paperswithcode.com/paper/a-cool-paper"
+    assert ingest._paper_pk({"abstract": "no identifiers"}) is None
+
+
+def test_reingest_preserves_collector_columns(conn):
+    """재적재가 수집기 컬럼(source, stars)을 DEFAULT로 리셋하지 않는다."""
+    ingest.ingest_papers(conn, FIXTURES / "papers.json")
+    ingest.ingest_links(conn, FIXTURES / "links.json")
+    conn.execute("UPDATE repos SET stars=999, source='github' "
+                 "WHERE repo_url LIKE '%tensor2tensor%'")
+    conn.execute("UPDATE papers SET source='arxiv' WHERE arxiv_id='1706.03762'")
+    conn.commit()
+    ingest.ingest_papers(conn, FIXTURES / "papers.json")
+    ingest.ingest_links(conn, FIXTURES / "links.json")
+    row = conn.execute("SELECT stars, source FROM repos "
+                       "WHERE repo_url LIKE '%tensor2tensor%'").fetchone()
+    assert (row[0], row[1]) == (999, "github")
+    assert conn.execute("SELECT source FROM papers WHERE arxiv_id='1706.03762'"
+                        ).fetchone()[0] == "arxiv"

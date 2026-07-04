@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import re
 import sqlite3
 from collections.abc import Iterable, Iterator
 from pathlib import Path
@@ -30,7 +31,9 @@ def iter_records(path: Path) -> Iterator[dict]:
     - 디렉터리 또는 .parquet 파일: parquet 샤드의 행 (HF 변환본)
     """
     if path.is_dir():
-        for shard in sorted(path.glob("*.parquet")):
+        shards = sorted(path.glob("*.parquet"))
+        _check_shards_complete(shards)
+        for shard in shards:
             yield from _iter_parquet(shard)
         return
     if path.suffix == ".parquet":
@@ -44,6 +47,28 @@ def iter_records(path: Path) -> Iterator[dict]:
             yield from json.load(f)
 
 
+def _check_shards_complete(shards: list[Path]) -> None:
+    """train-XXXXX-of-YYYYY 파일명 규약으로 샤드 완전성을 검증한다.
+
+    다운로드가 중간에 끊긴 디렉터리를 완전한 덤프로 착각하고 부분 데이터로
+    '성공' 적재하는 것을 막는다.
+    """
+    expected: set[int] | None = None
+    have: set[int] = set()
+    for shard in shards:
+        m = re.search(r"-(\d+)-of-(\d+)\.parquet$", shard.name)
+        if not m:
+            return  # 규약을 따르지 않는 파일명이면 검증 생략
+        have.add(int(m.group(1)))
+        expected = {i for i in range(int(m.group(2)))}
+    if expected is not None and have != expected:
+        missing = sorted(expected - have)
+        raise FileNotFoundError(
+            f"parquet 샤드 불완전: {len(have)}/{len(expected)}개 "
+            f"(누락 인덱스 {missing[:5]}...) — 다운로드를 다시 실행하세요"
+        )
+
+
 def _iter_parquet(path: Path) -> Iterator[dict]:
     import pyarrow.parquet as pq
 
@@ -55,7 +80,7 @@ def _iter_parquet(path: Path) -> Iterator[dict]:
 
 
 def strip_nulls(value: object) -> object:
-    """중첩 구조에서 null 값을 재귀적으로 제거한다.
+    """중첩 구조에서 null 값을 재귀적으로 제거하고 bytes를 디코딩한다.
 
     parquet은 스키마가 균일해야 해서, HF 변환 과정에서 서로 다른 행의
     지표 키들이 하나의 구조체로 통합되고 해당 없는 자리는 null로 채워진다
@@ -66,6 +91,8 @@ def strip_nulls(value: object) -> object:
         return {k: strip_nulls(v) for k, v in value.items() if v is not None}
     if isinstance(value, list):
         return [strip_nulls(v) for v in value if v is not None]
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
     return value
 
 
@@ -125,7 +152,7 @@ def ingest_papers(conn: sqlite3.Connection, path: Path) -> int:
                tasks=excluded.tasks, methods=excluded.methods"""
     rows = (
         (
-            r.get("paper_url") or r.get("url_abs") or r.get("title"),
+            _paper_pk(r),
             r.get("arxiv_id"),
             r.get("title"),
             r.get("abstract"),
@@ -138,8 +165,22 @@ def ingest_papers(conn: sqlite3.Connection, path: Path) -> int:
             _dumps(_nested(r.get("methods"))),
         )
         for r in iter_records(path)
+        if _paper_pk(r) is not None
     )
     return _executemany(conn, sql, rows)
+
+
+def _paper_pk(record: dict) -> str | None:
+    """papers PK 산출. paper_url이 없으면 제목 slug로 정규 URL을 만들어
+    앱 라우팅과 일치시키고, 그마저 불가하면 None(스킵 대상)."""
+    url = record.get("paper_url") or record.get("url_abs")
+    if url:
+        return url
+    title = record.get("title")
+    if not title:
+        return None
+    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+    return f"https://paperswithcode.com/paper/{slug}" if slug else None
 
 
 def ingest_links(conn: sqlite3.Connection, path: Path) -> int:

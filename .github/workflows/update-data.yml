@@ -12,6 +12,10 @@ on:
       - ".github/workflows/update-data.yml"
       - "pwc/collectors/**"
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   update:
     runs-on: ubuntu-latest

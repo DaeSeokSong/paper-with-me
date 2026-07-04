@@ -20,6 +20,6 @@
 </div>
 <div class="pager">
   {% if page > 1 %}<a href="/methods?q={{ q | urlencode }}&page={{ page - 1 }}">← 이전</a>{% endif %}
-  {% if methods | length == 20 %}<a href="/methods?q={{ q | urlencode }}&page={{ page + 1 }}">다음 →</a>{% endif %}
+  {% if methods | length == PAGE_SIZE %}<a href="/methods?q={{ q | urlencode }}&page={{ page + 1 }}">다음 →</a>{% endif %}
 </div>
 {% endblock %}

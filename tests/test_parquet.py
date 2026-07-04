@@ -106,3 +106,12 @@ def test_ingest_links_from_parquet(conn, tmp_path):
     records = json.loads((FIXTURES / "links.json").read_text())
     shard_dir = _write_shards(records, tmp_path / "links", n_shards=1)
     assert ingest.ingest_links(conn, shard_dir) == 2
+
+
+def test_incomplete_shards_raise(conn, tmp_path):
+    """부분 다운로드된 샤드 디렉터리를 완전한 덤프로 착각하지 않는다."""
+    records = json.loads((FIXTURES / "papers.json").read_text())
+    shard_dir = _write_shards(records, tmp_path / "papers", n_shards=2)
+    (shard_dir / "train-00001-of-00002.parquet").unlink()
+    with pytest.raises(FileNotFoundError, match="불완전"):
+        ingest.ingest_papers(conn, shard_dir)

@@ -16,6 +16,10 @@ on:
       - "scripts/deploy_hf.py"
       - ".github/workflows/deploy-hf.yml"
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest

@@ -36,6 +36,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     templates = Jinja2Templates(directory=TEMPLATES_DIR)
     templates.env.filters["paper_slug"] = queries.paper_slug
     templates.env.filters["slugify"] = queries.slugify
+    templates.env.globals["PAGE_SIZE"] = queries.PAGE_SIZE
 
     def conn():
         # SQLite 연결은 요청 스레드마다 새로 연다 (읽기 전용이라 저렴)

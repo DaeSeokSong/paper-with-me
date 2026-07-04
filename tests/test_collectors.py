@@ -78,9 +78,41 @@ def test_github_apply_links_repos_and_stars(conn):
         "SELECT github_stars FROM signals WHERE paper_url=?", (paper_url,)
     ).fetchone()[0]
     assert stars == 512  # 최다 스타 저장소 기준
-    # 링크가 생겼으므로 재검색 대상에서 제외된다
+
+
+def test_repo_search_log_prevents_daily_requery(conn):
+    """검색 0건 논문이 매일 같은 검색을 재소모하지 않도록, 재검색 대상은
+    repos 존재가 아니라 검색 이력 기준이다."""
+    papers = hf_papers.parse_daily((FIXTURES / "hf-daily.json").read_bytes())
+    hf_papers.apply(conn, papers)
     targets = github_links.papers_needing_repos(conn)
-    assert paper_url not in [t[0] for t in targets]
+    assert targets  # 검색 이력이 없으므로 대상
+    paper_url = targets[0][0]
+    conn.execute(
+        "INSERT INTO repo_search_log (paper_url, searched_at) VALUES (?,?)",
+        (paper_url, "2026-07-04T00:00:00"),
+    )
+    conn.commit()
+    # 0건이었어도(레포 미보유) 이력이 있으면 제외
+    assert paper_url not in [t[0] for t in github_links.papers_needing_repos(conn)]
+
+
+def test_github_language_not_stored_as_framework(conn):
+    """GitHub language(python 등)는 프레임워크가 아니다 — trends 오염 방지."""
+    repos = github_links.parse_search((FIXTURES / "github-search.json").read_bytes())
+    assert all(r["language"] is None for r in repos)
+
+
+def test_stale_signals_excluded_from_trending(conn):
+    from app import queries
+
+    papers = hf_papers.parse_daily((FIXTURES / "hf-daily.json").read_bytes())
+    hf_papers.apply(conn, papers)
+    # 신호를 15일 전으로 되돌리면 (리스트 이탈 후 동결 시나리오) 트렌딩 제외
+    conn.execute("UPDATE signals SET updated_at = datetime('now', '-15 days')")
+    conn.commit()
+    trending = queries.trending_papers(conn)
+    assert all(p["arxiv_id"] != "2507.22222" for p in trending)
 
 
 def test_trending_prefers_signal_papers(conn, tmp_path):

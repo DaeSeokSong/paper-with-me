@@ -23,7 +23,10 @@ def search_repos(arxiv_id: str, token: str | None = None) -> list[dict]:
     }
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    url = f"{API}?q={urllib.parse.quote(arxiv_id)}&per_page=5"
+    # in:readme 포함 — 진짜 구현 저장소는 README에만 arXiv ID를 적는 경우가
+    # 많다 (기본 검색 필드는 name/description). fork는 원본만 취한다.
+    query = f'"{arxiv_id}" in:name,description,readme fork:false'
+    url = f"{API}?q={urllib.parse.quote(query)}&per_page=3&sort=stars"
     req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=60) as resp:
         return parse_search(resp.read())
@@ -35,10 +38,12 @@ def parse_search(data: bytes) -> list[dict]:
         {
             "repo_url": r.get("html_url"),
             "stars": r.get("stargazers_count") or 0,
-            "language": (r.get("language") or "").lower() or None,
+            # GitHub language(python 등)는 프레임워크(pytorch/tf)가 아니다 —
+            # framework 컬럼에 넣으면 /trends 점유율이 오염된다
+            "language": None,
         }
         for r in items
-        if r.get("html_url")
+        if r.get("html_url") and not r.get("fork")
     ]
 
 
@@ -69,19 +74,25 @@ def apply(conn: sqlite3.Connection, paper_url: str, repos: list[dict]) -> int:
 
 
 def papers_needing_repos(conn: sqlite3.Connection, limit: int = 25) -> list[tuple]:
-    """코드 링크가 아직 없는 신규(비아카이브) 논문, 최신순."""
+    """아직 GitHub 검색을 시도하지 않은 신규(비아카이브) 논문, 최신순.
+
+    repos 존재 여부가 아니라 검색 이력(repo_search_log) 기준 — 0건 논문이
+    매일 같은 검색을 재소모하는 것을 막는다.
+    """
     return conn.execute(
         """SELECT paper_url, arxiv_id FROM papers p
            WHERE p.source != 'archive' AND p.arxiv_id IS NOT NULL
-             AND NOT EXISTS (SELECT 1 FROM repos r WHERE r.paper_url = p.paper_url)
+             AND NOT EXISTS (SELECT 1 FROM repo_search_log l
+                             WHERE l.paper_url = p.paper_url)
            ORDER BY p.date DESC LIMIT ?""",
         (limit,),
     ).fetchall()
 
 
 def collect(conn: sqlite3.Connection, token: str | None = None,
-            max_papers: int = 25, delay: float = 2.5) -> int:
+            max_papers: int = 50, delay: float = 2.5) -> int:
     total = 0
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     targets = papers_needing_repos(conn, max_papers)
     for paper_url, arxiv_id in targets:
         try:
@@ -90,6 +101,10 @@ def collect(conn: sqlite3.Connection, token: str | None = None,
             print(f"[github] {arxiv_id} 검색 실패: {e}", flush=True)
             continue
         n = apply(conn, paper_url, repos)
+        conn.execute(
+            "INSERT OR REPLACE INTO repo_search_log (paper_url, searched_at) "
+            "VALUES (?,?)", (paper_url, now),
+        )
         total += n
         if repos:
             print(f"[github] {arxiv_id}: 저장소 {n}개", flush=True)

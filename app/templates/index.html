@@ -15,7 +15,7 @@
 
 <h2>Latest</h2>
 {% for p in latest %}{% include "_paper_card.html" %}{% endfor %}
-{% if latest | length >= 20 %}
+{% if latest | length >= PAGE_SIZE %}
 <div class="pager"><a href="/papers?page=2">더 보기 →</a></div>
 {% endif %}
 {% endblock %}

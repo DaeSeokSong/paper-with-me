@@ -85,7 +85,8 @@ def trending_papers(conn, limit: int = 10) -> list[dict]:
            FROM papers p
            LEFT JOIN signals s ON s.paper_url = p.paper_url
            WHERE p.date IS NOT NULL
-             AND (s.paper_url IS NOT NULL
+             AND ((s.paper_url IS NOT NULL
+                   AND s.updated_at >= datetime('now', '-14 days'))
                   OR EXISTS (SELECT 1 FROM repos r WHERE r.paper_url = p.paper_url))
            ORDER BY p.date DESC LIMIT 300"""
     ).fetchall()
@@ -155,9 +156,14 @@ def search_papers(conn, q: str, page: int = 1) -> list[dict]:
 
 
 def _fts_query(q: str) -> str:
-    # 사용자 입력을 FTS 구문이 아닌 단순 단어 AND 매치로 취급한다
+    # 사용자 입력을 FTS 구문이 아닌 단순 단어 AND 매치로 취급한다.
+    # 마지막 단어는 prefix 매치 — 타이핑 중 검색·한글 어절 앞부분 대응
     words = re.findall(r"\w+", q)
-    return " ".join(f'"{w}"' for w in words) if words else '""'
+    if not words:
+        return '""'
+    phrases = [f'"{w}"' for w in words[:-1]]
+    phrases.append(f'"{words[-1]}"*')
+    return " ".join(phrases)
 
 
 # ---------------------------------------------------------------- sota
