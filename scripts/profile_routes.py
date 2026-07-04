@@ -66,8 +66,12 @@ def main() -> int:
     env.filters["paper_slug"] = queries.paper_slug
     env.filters["slugify"] = queries.slugify
     template = env.get_template("board.html")
+    # 라우트와 동일한 페이지네이션 컨텍스트로 렌더링
+    per = queries.BOARD_PAGE_SIZE
     html = timed("템플릿 렌더링", template.render, task=task,
-                 task_slug="image-classification", board=board, q="")
+                 task_slug="image-classification", board=board, q="",
+                 rows=board["rows"][:per], page=1, per=per, offset=0,
+                 total=len(board["rows"]))
     print(f"  HTML 크기: {len(html) / 1e6:.1f}MB", flush=True)
     return 0
 

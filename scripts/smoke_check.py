@@ -165,8 +165,9 @@ def main() -> int:
                 print(f"  깨진 논문 링크: {href} → {code} (출처 {board})")
     check("리더보드 렌더링 논문 링크 전수 연결 (스텁 폴백 포함)", linked_ok)
 
-    # 사용자 실보고 케이스: CIFAR-100 1위 EffNet-L2(SAM)의 논문 링크
-    r = get("/sota/image-classification/cifar-100")
+    # 사용자 실보고 케이스: CIFAR-100 상위권 SAM 계열 논문 링크
+    # (?per=100 — 페이지네이션으로 해당 행이 기본 20행 밖에 있어도 찾도록)
+    r = get("/sota/image-classification/cifar-100?per=100")
     m = _re.search(r'<a href="(/paper/[^"]+)"[^>]*>[^<]*SAM', r.text)
     if m:
         pr = timed_get(client, m.group(1))
