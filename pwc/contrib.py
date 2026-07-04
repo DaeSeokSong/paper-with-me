@@ -95,8 +95,8 @@ def ingest_contributions(conn: sqlite3.Connection, directory: Path) -> int:
         conn.execute(
             """INSERT INTO sota_rows
                (task, parent_task, dataset, model_name, metrics,
-                paper_url, paper_title, paper_date, code_links)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+                paper_url, paper_title, paper_date, code_links, source)
+               VALUES (?,?,?,?,?,?,?,?,?, 'contrib')""",
             (r["task"], None, r["dataset"], r["model_name"],
              json.dumps(r["metrics"], ensure_ascii=False),
              r.get("paper_url"), r.get("paper_title"), r.get("paper_date"),

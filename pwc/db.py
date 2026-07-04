@@ -120,6 +120,13 @@ MIGRATIONS = [
     # 데이터셋 표기 변형(예: 'CIFAR-10, 4000 Labels') — 카탈로그명과
     # 리더보드 dataset 문자열을 잇는 데 필요
     "ALTER TABLE datasets ADD COLUMN variants TEXT",
+    # 리더보드 행 출처 — 'archive'(덤프)/'contrib'(기여 PR)/'auto'(초록 추출)
+    "ALTER TABLE sota_rows ADD COLUMN source TEXT DEFAULT 'archive'",
+    # 초록 결과 추출을 이미 시도한 논문 기록 (0건 논문 재시도 방지)
+    """CREATE TABLE IF NOT EXISTS result_extract_log (
+        paper_url   TEXT PRIMARY KEY,
+        searched_at TEXT
+    )""",
 ]
 
 FTS_SCHEMA = """

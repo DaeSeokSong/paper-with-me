@@ -451,7 +451,40 @@ def dataset_leaderboard(conn, task: str, dataset: str) -> dict:
         if any(isinstance(r["metrics"], dict) and r["metrics"].get(m)
                for r in rows)
     ]
-    return {"dataset": dataset, "metric_names": metric_names[:8], "rows": rows}
+    metric_names = metric_names[:8]
+    # 자동 추출(source='auto') 행은 id 순서상 맨 뒤에 붙으므로, 주 지표
+    # 값 기준으로 원본 순서열 안의 제자리에 끼워 넣는다 (원본 행들의
+    # 상대 순서는 그대로 유지 — 재정렬 금지 원칙은 원본 행에만 적용)
+    primary = metric_names[0] if metric_names else None
+    auto = [r for r in rows if r.get("source") == "auto"]
+    if auto and primary:
+        base = [r for r in rows if r.get("source") != "auto"]
+        lower_better = bool(_LOWER_BETTER.search(primary))
+        for a in auto:
+            av = _metric_value(a, primary)
+            pos = len(base)
+            if av is not None:
+                for i, b in enumerate(base):
+                    bv = _metric_value(b, primary)
+                    if bv is None:
+                        continue
+                    if (av > bv) if not lower_better else (av < bv):
+                        pos = i
+                        break
+            base.insert(pos, a)
+        rows = base
+    return {"dataset": dataset, "metric_names": metric_names, "rows": rows}
+
+
+def _metric_value(row: dict, metric: str) -> float | None:
+    metrics = row.get("metrics")
+    if not isinstance(metrics, dict):
+        return None
+    try:
+        return float(str(metrics.get(metric, "")
+                         ).replace("%", "").replace(",", "").strip())
+    except ValueError:
+        return None
 
 
 _LOWER_BETTER = re.compile(
