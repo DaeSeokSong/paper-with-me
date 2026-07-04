@@ -172,11 +172,13 @@
     main { padding: 16px; }
     h1 { font-size: 22px; }
     header { padding: 0 16px; }
-    header .inner { gap: 4px 12px; }
+    header .inner { gap: 4px 12px; position: relative; }
     header a.brand { padding: 10px 0; }
     /* 모바일 터치 타겟 확보 — 메뉴·토글이 엄지로 눌리는 크기여야 한다 */
     header nav a { padding: 12px 8px; }
-    #theme-toggle { padding: 12px; }
+    /* 토글이 단독 줄을 차지하지 않도록 브랜드 줄 우측에 고정 */
+    #theme-toggle { padding: 12px; position: absolute; top: 0; right: 0;
+                    margin-left: 0; }
     header form { margin-left: 0; width: 100%; padding-bottom: 10px; }
     header input { width: 100%; max-width: none; }
     .stats { gap: 16px; }
