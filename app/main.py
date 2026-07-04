@@ -48,6 +48,15 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         # SQLite 연결은 요청 스레드마다 새로 연다 (읽기 전용이라 저렴)
         return queries.connect(db_path)
 
+    # 비정형 논문 URL 맵을 기동 시 예열 — 첫 사용자 요청이 스냅샷 스캔
+    # 비용(느린 디스크에서 수 초)을 지불하지 않도록 한다. DB가 아직 없는
+    # 개발 환경 등에서는 조용히 건너뛴다.
+    if db_path.exists():
+        try:
+            queries._paper_url_map(queries.connect(db_path))
+        except Exception:  # noqa: BLE001 - 예열 실패가 기동을 막으면 안 됨
+            pass
+
     def render(request: Request, template: str, **ctx) -> HTMLResponse:
         return templates.TemplateResponse(request, template, ctx)
 

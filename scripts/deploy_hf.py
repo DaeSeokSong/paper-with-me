@@ -192,13 +192,19 @@ def live_check(base: str) -> bool:
         return False
     broken = []
     for href in sorted(set(re.findall(r'href="(/paper/[^"]+)"', html))):
-        try:
-            with urllib.request.urlopen(base.rstrip("/") + href,
-                                        timeout=60) as resp:
-                if resp.status != 200:
-                    broken.append(f"{href} → {resp.status}")
-        except Exception as e:  # noqa: BLE001 - HTTPError(404 등) 포함
-            broken.append(f"{href} → {e}")
+        last_err = None
+        for _attempt in range(2):  # 일시 네트워크 오류로 배포가 실패하지 않게
+            try:
+                with urllib.request.urlopen(base.rstrip("/") + href,
+                                            timeout=60) as resp:
+                    last_err = (None if resp.status == 200
+                                else f"{href} → {resp.status}")
+                break
+            except Exception as e:  # noqa: BLE001 - HTTPError(404 등) 포함
+                last_err = f"{href} → {e}"
+                time.sleep(3)
+        if last_err:
+            broken.append(last_err)
     if broken:
         print(f"[deploy] 라이브 논문 링크 {len(broken)}건 깨짐:")
         for b in broken:

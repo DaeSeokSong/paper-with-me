@@ -112,6 +112,33 @@ def trending_papers(conn, limit: int = 10) -> list[dict]:
 
 SLUG_RE = re.compile(r"[A-Za-z0-9._-]{1,200}")
 
+_paper_url_maps: dict[tuple, dict[str, str]] = {}
+
+
+def _paper_url_map(conn) -> dict[str, str]:
+    """비정형(비 canonical) 리더보드 paper_url의 slug → 원본 URL 맵.
+
+    OpenReview/CVF/IEEE/Springer 등 canonical이 아닌 참조는 slug에서 원본
+    URL을 역산할 수 없어 LIKE 접미 스캔이 필요했는데, 5GB 스냅샷 콜드
+    캐시에서는 요청당 수십 초가 걸려 라이브 타임아웃을 냈다(배포 라이브
+    점검에서 실측). 스냅샷 단위로 한 번만 훑어 맵으로 캐시하고, 요청
+    경로는 인덱스 정확 일치만 쓴다.
+    """
+    key = _db_key(conn)
+    if key not in _paper_url_maps:
+        m: dict[str, str] = {}
+        for (u,) in conn.execute(
+            """SELECT DISTINCT paper_url FROM sota_rows
+               WHERE paper_url IS NOT NULL
+                 AND paper_url NOT LIKE 'https://paperswithcode.com/paper/%'"""
+        ):
+            s = paper_slug(u)
+            if s:
+                m.setdefault(s, u)
+        _paper_url_maps.clear()  # 이전 스냅샷 엔트리 정리
+        _paper_url_maps[key] = m
+    return _paper_url_maps[key]
+
 
 def get_paper(conn, slug: str) -> dict | None:
     # slug 형식 제한 — 와일드카드 주입과 무의미한 풀스캔을 차단한다.
@@ -119,15 +146,15 @@ def get_paper(conn, slug: str) -> dict | None:
     if not SLUG_RE.fullmatch(slug):
         return None
     # ① 정규 paper_url PK ② arXiv URL(리더보드가 arxiv.org 링크로 참조하는
-    # 논문 — url_abs 인덱스, 버전 접미 v N 은 떼고도 시도) ③ LIKE 폴백
-    # (OpenReview forum?id= 등 예외 레코드, 최후 수단) 순서.
+    # 논문 — url_abs 인덱스, 버전 접미 vN은 떼고도 시도) ③ 비정형 URL 맵
+    # (OpenReview forum?id= 등)으로 원본 URL을 찾아 인덱스 정확 일치.
+    # LIKE 접미 스캔은 쓰지 않는다 — 5GB 스냅샷에서 요청당 수십 초.
     arxiv_ids = [slug]
     m = re.fullmatch(r"(\d{4}\.\d{4,5})v\d+", slug)
     if m:
         arxiv_ids.append(m.group(1))
     arxiv_urls = [f"{scheme}://arxiv.org/abs/{i}"
                   for i in arxiv_ids for scheme in ("https", "http")]
-    esc = _like(slug)
     row = conn.execute(
         "SELECT * FROM papers WHERE paper_url = ?",
         (f"https://paperswithcode.com/paper/{slug}",),
@@ -135,11 +162,15 @@ def get_paper(conn, slug: str) -> dict | None:
         "SELECT * FROM papers WHERE url_abs IN "
         f"({','.join('?' * len(arxiv_urls))}) LIMIT 1",
         arxiv_urls,
-    ).fetchone() or conn.execute(
-        "SELECT * FROM papers WHERE paper_url LIKE ? ESCAPE '\\' "
-        "OR url_abs LIKE ? ESCAPE '\\' OR url_abs LIKE ? ESCAPE '\\' LIMIT 1",
-        (f"%/paper/{esc}", f"%={esc}", f"%={esc}&%"),
     ).fetchone()
+    if row is None:
+        src = _paper_url_map(conn).get(slug)
+        if src:
+            row = conn.execute(
+                "SELECT * FROM papers WHERE paper_url = ?", (src,)
+            ).fetchone() or conn.execute(
+                "SELECT * FROM papers WHERE url_abs = ? LIMIT 1", (src,)
+            ).fetchone()
     return _loads(row, "authors", "tasks", "methods") if row else None
 
 
@@ -163,20 +194,17 @@ def get_paper_stub(conn, slug: str) -> dict | None:
         )
     ]
     if not rows:
-        # 비정형 URL(도메인·접두 상이, OpenReview forum?id= 형)은
-        # 접미/쿼리 파라미터 일치로 최후 수단 조회
-        esc = _like(slug)
-        rows = [
-            _loads(r, "metrics", "code_links")
-            for r in conn.execute(
-                """SELECT * FROM sota_rows
-                   WHERE paper_url LIKE ? ESCAPE '\\'
-                      OR paper_url LIKE ? ESCAPE '\\'
-                      OR paper_url LIKE ? ESCAPE '\\'
-                   ORDER BY id LIMIT 200""",
-                (f"%/{esc}", f"%={esc}", f"%={esc}&%"),
-            )
-        ]
+        # 비정형 URL(OpenReview forum?id=, CVF, IEEE 등)은 slug → 원본 URL
+        # 맵으로 역해석 후 인덱스 정확 일치 (LIKE 스캔 금지 — 위 주석 참조)
+        src = _paper_url_map(conn).get(slug)
+        if src:
+            rows = [
+                _loads(r, "metrics", "code_links")
+                for r in conn.execute(
+                    "SELECT * FROM sota_rows WHERE paper_url = ? ORDER BY id",
+                    (src,),
+                )
+            ]
     if not rows:
         return None
     repos: dict[str, dict] = {}
