@@ -31,13 +31,22 @@
     {% set py = 260 - 240 * (p.value - vmin) / vspan %}
     {% if pts.append("%.1f,%.1f" | format(px, py)) %}{% endif %}
   {% endfor %}
-  <polyline points="{{ pts | join(' ') }}" fill="none" stroke="#21cbce" stroke-width="2"/>
+  {# 원본 차트 색: SOTA 추세선 #21ccc7, 기타 결과 점 #ddd (원본 JSON 확인) #}
   {% for p in chart.points %}
     {% set px = 40 + 920 * (((p.date[:4] | int) * 372 + (p.date[5:7] | int) * 31 + (p.date[8:10] | int(0)))
                  - ((dmin[:4] | int) * 372 + (dmin[5:7] | int) * 31 + (dmin[8:10] | int(0)))) / span_days %}
     {% set py = 260 - 240 * (p.value - vmin) / vspan %}
     <circle cx="{{ '%.1f' | format(px) }}" cy="{{ '%.1f' | format(py) }}" r="4"
-            fill="#21cbce" fill-opacity="0.45">
+            fill="#bbb" fill-opacity="0.65">
+      <title>{{ p.model }} — {{ p.value }} ({{ p.date }})</title>
+    </circle>
+  {% endfor %}
+  <polyline points="{{ pts | join(' ') }}" fill="none" stroke="#21ccc7" stroke-width="2"/>
+  {% for p in chart.frontier %}
+    {% set px = 40 + 920 * (((p.date[:4] | int) * 372 + (p.date[5:7] | int) * 31 + (p.date[8:10] | int(0)))
+                 - ((dmin[:4] | int) * 372 + (dmin[5:7] | int) * 31 + (dmin[8:10] | int(0)))) / span_days %}
+    {% set py = 260 - 240 * (p.value - vmin) / vspan %}
+    <circle cx="{{ '%.1f' | format(px) }}" cy="{{ '%.1f' | format(py) }}" r="5" fill="#21ccc7">
       <title>{{ p.model }} — {{ p.value }} ({{ p.date }})</title>
     </circle>
   {% endfor %}
@@ -47,9 +56,9 @@
 <div class="table-wrap">
 <table>
   <tr>
-    <th class="rank">#</th><th>Model</th>
+    <th class="rank">Rank</th><th>Model</th>
     {% for m in board.metric_names %}<th>{{ m }}</th>{% endfor %}
-    <th>Paper</th><th>Code</th>
+    <th>Paper</th><th>Code</th><th>Year</th>
   </tr>
   {% for r in board.rows %}
   <tr>
@@ -58,7 +67,6 @@
     {% for m in board.metric_names %}<td>{{ r.metrics.get(m, "–") if r.metrics is mapping else "–" }}</td>{% endfor %}
     <td>
       {% if r.paper_url %}<a href="/paper/{{ r.paper_url | paper_slug }}">{{ r.paper_title or "논문" }}</a>{% endif %}
-      <span class="muted">{{ r.paper_date or "" }}</span>
     </td>
     <td>
       {#- 코드 링크가 수십 개인 행이 표를 폭파시키지 않도록 3개까지만 표시하고,
@@ -75,6 +83,7 @@
         · <a href="/paper/{{ r.paper_url | paper_slug }}">+{{ r.code_links | length - 3 }}</a>
       {%- endif -%}
     </td>
+    <td class="muted">{{ (r.paper_date or "")[:4] }}</td>
   </tr>
   {% endfor %}
 </table>

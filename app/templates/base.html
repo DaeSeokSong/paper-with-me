@@ -12,7 +12,10 @@
   :root {
     color-scheme: light dark;
     --blue: #21cbce;
-    --header: #0f1419;
+    /* 원본 paperswithcode.com은 흰색 헤더였다 (원본 HTML 캡처로 확인) */
+    --header: #ffffff;
+    --header-fg: #333333;
+    --header-fg-dim: #556270;
     --link: #1a73e8;
     --border: #e5e7eb;
     --bg: #ffffff;
@@ -22,11 +25,15 @@
     --badge-bg: #eef2f7;
     --badge-fg: #334155;
     --th-bg: #f8fafc;
-    --input-bg: #1e2833;
-    --input-border: #33404d;
+    --input-bg: #f4f6f8;
+    --input-border: #d6dde5;
+    --input-fg: #222222;
   }
   @media (prefers-color-scheme: dark) {
     :root {
+      --header: #0f1419;
+      --header-fg: #ffffff;
+      --header-fg-dim: #cbd5e1;
       --link: #7ab8ff;
       --border: #2a3441;
       --bg: #0f1419;
@@ -36,6 +43,9 @@
       --badge-bg: #223041;
       --badge-fg: #cbd5e1;
       --th-bg: #161d26;
+      --input-bg: #1e2833;
+      --input-border: #33404d;
+      --input-fg: #ffffff;
     }
   }
   * { box-sizing: border-box; }
@@ -43,18 +53,23 @@
          color: var(--fg); background: var(--bg); }
   a { color: var(--link); text-decoration: none; }
   a:hover { text-decoration: underline; }
-  header { background: var(--header); padding: 0 24px; }
+  header { background: var(--header); padding: 0 24px;
+           border-bottom: 1px solid var(--border); }
   header .inner { max-width: 1100px; margin: 0 auto; display: flex; align-items: center;
                   gap: 20px; flex-wrap: wrap; }
-  header a.brand { color: #fff; font-weight: 700; font-size: 18px; padding: 14px 0; }
+  header a.brand { color: var(--header-fg); font-weight: 700; font-size: 18px;
+                   padding: 14px 0; }
   header a.brand span { color: var(--blue); }
   header nav { display: flex; flex-wrap: wrap; gap: 2px 12px; }
-  header nav a { color: #cbd5e1; padding: 14px 4px; font-size: 14px; }
-  header nav a:hover { color: #fff; text-decoration: none; }
-  header form { margin-left: auto; }
+  header nav a { color: var(--header-fg-dim); padding: 14px 4px; font-size: 14px; }
+  header nav a:hover { color: var(--header-fg); text-decoration: none; }
+  /* 원본 헤더 순서: 로고 → 검색 → 메뉴 */
+  header nav { order: 1; }
   header input { background: var(--input-bg); border: 1px solid var(--input-border);
-                 color: #fff; border-radius: 4px; padding: 7px 10px; width: 240px;
-                 max-width: 70vw; }
+                 color: var(--input-fg); border-radius: 4px; padding: 7px 10px;
+                 width: 200px; max-width: 70vw; }
+  .area-title { border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+  .see-all { color: var(--blue); font-size: 14px; }
   main { max-width: 1100px; margin: 0 auto; padding: 24px;
          overflow-wrap: anywhere; }
   h1 { font-size: 26px; } h2 { font-size: 20px; margin-top: 32px; }
@@ -78,9 +93,11 @@
   .paper-meta { margin-bottom: 16px; }
   .abstract { max-width: 800px; line-height: 1.65; }
   .btn-row { display: flex; gap: 10px; align-items: center; margin: 16px 0 8px; }
-  .btn { display: inline-block; border: 1px solid var(--border); border-radius: 6px;
-         padding: 7px 16px; font-size: 14px; font-weight: 600; }
-  .btn:hover { background: var(--badge-bg); text-decoration: none; }
+  /* 원본 PDF/Abstract 버튼의 청록 그라데이션 (#02aab0→#00cdac, 원본 CSS 확인) */
+  .btn { display: inline-block; border: none; border-radius: 6px;
+         padding: 8px 18px; font-size: 14px; font-weight: 600; color: #fff;
+         background: linear-gradient(to bottom, #02aab0 0%, #00cdac 100%); }
+  .btn:hover { filter: brightness(1.06); text-decoration: none; color: #fff; }
   .repo-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
               padding: 10px 14px; margin: 8px 0; }
   .rank { color: var(--muted); width: 36px; }
@@ -127,10 +144,12 @@ if ("serviceWorker" in navigator) {
 }
 </script>
 <footer>
+  paper-with-me is a free resource with all data licensed under
+  <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC-BY-SA</a>.<br>
   Papers with Code 복원 프로젝트 (비공식, Meta와 무관) ·
   <a href="https://github.com/DaeSeokSong/paper-with-me">소스 코드</a> (AGPL-3.0) ·
-  데이터: <a href="https://huggingface.co/pwc-archive">pwc-archive</a>
-  (CC-BY-SA 4.0, 2025-07 스냅샷 + 일일 갱신)
+  데이터 출처: <a href="https://huggingface.co/pwc-archive">pwc-archive</a>
+  (2025-07 스냅샷 + 일일 갱신)
 </footer>
 </body>
 </html>

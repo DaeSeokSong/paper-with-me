@@ -102,6 +102,10 @@ def main() -> int:
     check("리더보드 표 (CIFAR-100) 지표 정상",
           r.status_code == 200 and ">None<" not in r.text
           and "Content Selection" not in r.text)
+    # 원본 사이트에서 알려진 실측값 (ground truth): EffNet-L2(SAM) 96.08
+    check("수치 정합 — CIFAR-100 EffNet-L2(SAM) 96.08",
+          "96.08" in r.text and "SAM" in r.text)
+    check("리더보드 SOTA 추이 차트 렌더링", "<svg" in r.text)
 
     r = get("/task/semantic-segmentation")
     check("원본 /task/ URL 호환", r.status_code == 200)

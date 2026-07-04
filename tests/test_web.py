@@ -117,7 +117,8 @@ def test_board_sota_chart_renders(tmp_path):
     r = c.get("/sota/t/ds")
     assert r.status_code == 200
     assert "<svg" in r.text and "<polyline" in r.text
-    assert r.text.count("<circle") == 4
+    # 전체 점 4개(회색) + 단조 증가라 전부 프런티어 강조점(청록) 4개 = 8
+    assert r.text.count("<circle") == 8
 
 
 def test_board_chart_helper():

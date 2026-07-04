@@ -111,6 +111,8 @@ MIGRATIONS = [
     "ALTER TABLE sota_rows ADD COLUMN metrics_order TEXT",
     # arXiv 개정판 추적 — published(v1)와 별개의 마지막 갱신일
     "ALTER TABLE papers ADD COLUMN updated TEXT",
+    # 원본 /sota의 분야(area)별 그룹핑용 — evaluation-tables의 categories
+    "ALTER TABLE sota_rows ADD COLUMN area TEXT",
 ]
 
 FTS_SCHEMA = """

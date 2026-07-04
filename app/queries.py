@@ -208,11 +208,29 @@ def _fts_query(q: str) -> str:
 def sota_tasks(conn) -> list[dict]:
     rows = conn.execute(
         """SELECT task, COUNT(DISTINCT dataset) AS n_datasets, COUNT(*) AS n_rows,
-                  MIN(parent_task) AS parent_task
+                  COUNT(DISTINCT paper_url) AS n_papers,
+                  MIN(parent_task) AS parent_task, MAX(area) AS area
            FROM sota_rows WHERE task IS NOT NULL
            GROUP BY task ORDER BY n_rows DESC"""
     ).fetchall()
     return [dict(r) | {"slug": slugify(r["task"])} for r in rows]
+
+
+def sota_areas(conn) -> list[dict]:
+    """원본 /sota 처럼 분야(area)별로 task를 그룹핑한다. area 정보가 없는
+    구 스냅샷에서는 단일 그룹으로 폴백한다."""
+    tasks = sota_tasks(conn)
+    groups: dict[str, list[dict]] = {}
+    for t in tasks:
+        groups.setdefault(t["area"] or "Miscellaneous", []).append(t)
+    if list(groups) == ["Miscellaneous"]:
+        return [{"area": None, "tasks": tasks}]
+    # 원본처럼 큰 분야(태스크 수 기준) 먼저
+    return [
+        {"area": area, "tasks": ts}
+        for area, ts in sorted(groups.items(),
+                               key=lambda kv: -len(kv[1]))
+    ]
 
 
 _slug_maps: dict[tuple, dict[str, str]] = {}

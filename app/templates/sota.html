@@ -1,17 +1,25 @@
 {% extends "base.html" %}
-{% block title %}Browse State-of-the-Art · paper-with-me{% endblock %}
+{% block title %}Browse the State-of-the-Art in Machine Learning · paper-with-me{% endblock %}
 {% block content %}
-<h1>Browse State-of-the-Art</h1>
-<p class="muted">{{ tasks | length }}개 벤치마크 task</p>
-<div class="grid">
-  {% for t in tasks %}
-  <div class="card">
-    <h3><a href="/sota/{{ t.slug }}">{{ t.task }}</a></h3>
-    <div class="muted">
-      {{ t.n_datasets }}개 벤치마크 · {{ t.n_rows }}개 결과
-      {% if t.parent_task %} · 상위: {{ t.parent_task }}{% endif %}
+<h1 style="text-align:center">Browse State-of-the-Art</h1>
+{% set total = areas | map(attribute="tasks") | map("length") | sum %}
+<p class="muted" style="text-align:center">{{ total }}개 벤치마크 task</p>
+{% set limit = None if expanded else 15 %}
+{% for g in areas %}
+  {% if g.area %}<h2 class="area-title">{{ g.area }}</h2>{% endif %}
+  <div class="grid">
+    {% for t in (g.tasks if expanded else g.tasks[:15]) %}
+    <div class="card">
+      <h3><a href="/sota/{{ t.slug }}">{{ t.task }}</a></h3>
+      <div class="muted">
+        {{ t.n_datasets }} benchmarks · {{ t.n_papers }} papers with code
+        {% if t.parent_task %} · 상위: {{ t.parent_task }}{% endif %}
+      </div>
     </div>
+    {% endfor %}
   </div>
-  {% endfor %}
-</div>
+  {% if not expanded and g.tasks | length > 15 and g.area %}
+  <p><a class="see-all" href="/sota?area={{ g.area | urlencode }}">▸ See all {{ g.tasks | length }} tasks</a></p>
+  {% endif %}
+{% endfor %}
 {% endblock %}

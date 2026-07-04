@@ -261,12 +261,17 @@ def ingest_evaluations(conn: sqlite3.Connection, path: Path) -> int:
     재귀적으로 평탄화하여 sota_rows에 적재한다."""
     sql = """INSERT INTO sota_rows
              (task, parent_task, dataset, model_name, metrics,
-              paper_url, paper_title, paper_date, code_links, metrics_order)
-             VALUES (?,?,?,?,?,?,?,?,?,?)"""
+              paper_url, paper_title, paper_date, code_links, metrics_order,
+              area)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?)"""
     conn.execute("DELETE FROM sota_rows")
 
-    def flatten(task_obj: dict, parent: str | None) -> Iterator[tuple]:
+    def flatten(task_obj: dict, parent: str | None,
+                area: str | None = None) -> Iterator[tuple]:
         task_name = task_obj.get("task")
+        categories = _nested(task_obj.get("categories")) or []
+        if categories and isinstance(categories[0], str):
+            area = categories[0]  # 하위 task는 상위 분야를 상속
         for ds in _nested(task_obj.get("datasets")) or []:
             dataset_name = ds.get("dataset")
             sota = _nested(ds.get("sota")) or {}
@@ -284,9 +289,10 @@ def ingest_evaluations(conn: sqlite3.Connection, path: Path) -> int:
                     row.get("paper_date"),
                     _dumps(_nested(row.get("code_links"))),
                     metrics_order,
+                    area,
                 )
         for sub in _nested(task_obj.get("subtasks")) or []:
-            yield from flatten(sub, task_name)
+            yield from flatten(sub, task_name, area)
 
     rows = (row for task in iter_records(path) for row in flatten(task, None))
     return _executemany(conn, sql, rows)

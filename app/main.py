@@ -121,9 +121,12 @@ def create_app(db_path: Path | None = None) -> FastAPI:
                       papers=queries.latest_papers(c, page))
 
     @app.get("/sota", response_class=HTMLResponse)
-    def sota(request: Request):
+    def sota(request: Request, area: str = ""):
         c = conn()
-        return render(request, "sota.html", tasks=queries.sota_tasks(c))
+        areas = queries.sota_areas(c)
+        if area:
+            areas = [g for g in areas if g["area"] == area] or areas
+        return render(request, "sota.html", areas=areas, expanded=bool(area))
 
     def _search_fallback(slug: str) -> RedirectResponse:
         # 논문 메타데이터의 task/method가 리더보드·카탈로그에 없는 경우가
