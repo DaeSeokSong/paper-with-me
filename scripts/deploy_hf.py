@@ -216,6 +216,17 @@ def live_check(base: str) -> bool:
         for b in broken:
             print(f"  {b}")
         return False
+    # 리더보드 ↔ 데이터셋 카탈로그 왕복 (QA에서 복원한 동선) 라이브 확인
+    for href in set(re.findall(r'href="(/dataset/[^"]+)"', html)):
+        try:
+            with urllib.request.urlopen(base.rstrip("/") + href,
+                                        timeout=60) as resp:
+                if resp.status != 200:
+                    print(f"[deploy] 데이터셋 링크 깨짐: {href} → {resp.status}")
+                    return False
+        except Exception as e:  # noqa: BLE001
+            print(f"[deploy] 데이터셋 링크 깨짐: {href} → {e}")
+            return False
     print("[deploy] 라이브 점검 OK: 리더보드 수치·논문 링크 전수 연결")
     return True
 
