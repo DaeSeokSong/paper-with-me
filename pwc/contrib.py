@@ -21,7 +21,9 @@ def validate_record(record: dict, where: str) -> list[str]:
     """기여 레코드 스키마 검증. 문제 목록을 반환한다 (비면 유효)."""
     errors = []
     for field in REQUIRED:
-        if not record.get(field):
+        value = record.get(field)
+        # 빈 dict(metrics={})는 아래 형식 검증이 담당한다 — 이중 계수 방지
+        if value is None or value == "":
             errors.append(f"{where}: 필수 필드 누락 — {field}")
     metrics = record.get("metrics")
     if metrics is not None:
