@@ -96,6 +96,12 @@ def main() -> int:
     r = get("/sota/image-classification/imagenet")
     check("리더보드 표 (Image Classification on ImageNet)",
           r.status_code == 200 and "<table" in r.text)
+    check("리더보드 지표 값 오염 없음 (None 노출 금지)", ">None<" not in r.text)
+
+    r = get("/sota/image-classification/cifar-100")
+    check("리더보드 표 (CIFAR-100) 지표 정상",
+          r.status_code == 200 and ">None<" not in r.text
+          and "Content Selection" not in r.text)
 
     r = get("/task/semantic-segmentation")
     check("원본 /task/ URL 호환", r.status_code == 200)

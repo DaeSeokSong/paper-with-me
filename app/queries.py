@@ -13,6 +13,7 @@ from collections import Counter
 from pathlib import Path
 
 from pwc import db as pwc_db
+from pwc.ingest import strip_nulls
 
 PAGE_SIZE = 20
 
@@ -30,7 +31,9 @@ def slugify(name: str) -> str:
 def _loads(row: dict, *keys: str) -> dict:
     out = dict(row)
     for k in keys:
-        out[k] = json.loads(out[k]) if out.get(k) else []
+        # strip_nulls: parquet 스키마 통합으로 null이 채워진 기존 스냅샷도
+        # 읽기 시점에 정화한다 (재빌드 전 배포본 대응)
+        out[k] = strip_nulls(json.loads(out[k])) if out.get(k) else []
     return out
 
 

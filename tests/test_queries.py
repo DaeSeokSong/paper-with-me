@@ -56,6 +56,23 @@ def test_find_benchmark_dataset(conn):
     assert queries.find_benchmark_dataset(conn, "T", "nope") is None
 
 
+def test_dataset_leaderboard_cleans_null_filled_metrics(conn):
+    """기존 스냅샷(정화 전 적재분) 대응: metrics에 null 채움 키가 있어도
+    읽기 시점에 제거되어 지표 컬럼과 값이 올바르게 나와야 한다."""
+    dirty = json.dumps({"Accuracy": "96.08", "Content Selection (F1)": None,
+                        "Macro-F1": None, "Rank-1": None})
+    conn.execute(
+        "INSERT INTO sota_rows (task,parent_task,dataset,model_name,metrics,"
+        "paper_url,paper_title,paper_date,code_links) VALUES (?,?,?,?,?,?,?,?,?)",
+        ("Image Classification", None, "CIFAR-100", "EffNet-L2", dirty,
+         "https://x/paper/p", "P", "2020-10-03", "[]"),
+    )
+    conn.commit()
+    board = queries.dataset_leaderboard(conn, "Image Classification", "CIFAR-100")
+    assert board["metric_names"] == ["Accuracy"]
+    assert board["rows"][0]["metrics"] == {"Accuracy": "96.08"}
+
+
 def test_find_task_uses_cache(conn):
     _fill_board(conn, "Semantic Segmentation", "DS", 1)
     assert queries.find_task(conn, "semantic-segmentation") == "Semantic Segmentation"

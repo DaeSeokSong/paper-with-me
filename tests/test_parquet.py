@@ -76,6 +76,32 @@ def test_ingest_evaluations_from_parquet_json_string(conn, tmp_path):
     assert sub == "Image Classification"
 
 
+def test_ingest_evaluations_strips_parquet_null_unification(conn, tmp_path):
+    """parquet 스키마 통합 버그 재현: 서로 다른 task의 지표 키가 하나의
+    구조체로 합쳐지며 null로 채워진다. 적재 시 null 키가 제거되어야 한다."""
+    records = [
+        {"task": "Image Classification", "datasets": [
+            {"dataset": "CIFAR-100", "sota": {"rows": [
+                {"model_name": "EffNet-L2", "metrics": {"Accuracy": "96.08"},
+                 "code_links": []}]}}], "subtasks": []},
+        {"task": "Data-to-Text", "datasets": [
+            {"dataset": "WebNLG", "sota": {"rows": [
+                {"model_name": "T5", "metrics": {"Content Selection (F1)": "0.61"},
+                 "code_links": []}]}}], "subtasks": []},
+    ]
+    shard_dir = _write_shards(records, tmp_path / "evals", n_shards=1)
+    # pyarrow 통합으로 각 행의 metrics에 상대 task의 키가 null로 끼어드는지 확인
+    raw = pq.read_table(shard_dir / "train-00000-of-00001.parquet").to_pylist()
+    raw_metrics = raw[0]["datasets"][0]["sota"]["rows"][0]["metrics"]
+    assert "Content Selection (F1)" in raw_metrics  # 오염 전제 성립
+
+    assert ingest.ingest_evaluations(conn, shard_dir) == 2
+    stored = json.loads(conn.execute(
+        "SELECT metrics FROM sota_rows WHERE model_name='EffNet-L2'"
+    ).fetchone()[0])
+    assert stored == {"Accuracy": "96.08"}  # null 키 제거됨
+
+
 def test_ingest_links_from_parquet(conn, tmp_path):
     records = json.loads((FIXTURES / "links.json").read_text())
     shard_dir = _write_shards(records, tmp_path / "links", n_shards=1)

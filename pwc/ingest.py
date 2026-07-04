@@ -54,20 +54,36 @@ def _iter_parquet(path: Path) -> Iterator[dict]:
         yield from batch.to_pylist()
 
 
+def strip_nulls(value: object) -> object:
+    """중첩 구조에서 null 값을 재귀적으로 제거한다.
+
+    parquet은 스키마가 균일해야 해서, HF 변환 과정에서 서로 다른 행의
+    지표 키들이 하나의 구조체로 통합되고 해당 없는 자리는 null로 채워진다
+    (예: 리더보드 행 하나가 전체 덤프의 지표 수천 종을 null로 갖게 됨).
+    null 키를 걷어내야 원본 JSON 덤프와 같은 형태가 된다.
+    """
+    if isinstance(value, dict):
+        return {k: strip_nulls(v) for k, v in value.items() if v is not None}
+    if isinstance(value, list):
+        return [strip_nulls(v) for v in value if v is not None]
+    return value
+
+
 def _nested(value: object) -> object:
     """중첩 필드 정규화.
 
     parquet 변환본에서는 중첩 구조가 네이티브 리스트/구조체로 오기도 하고,
-    JSON 문자열로 직렬화되어 있기도 하다. 문자열이면 파싱을 시도한다.
+    JSON 문자열로 직렬화되어 있기도 하다. 문자열이면 파싱을 시도하고,
+    구조체 통합으로 생긴 null 채움은 제거한다.
     """
     if isinstance(value, bytes):
         value = value.decode("utf-8", errors="replace")
     if isinstance(value, str) and value.lstrip()[:1] in ("[", "{"):
         try:
-            return json.loads(value)
+            value = json.loads(value)
         except ValueError:
             return value
-    return value
+    return strip_nulls(value)
 
 
 def _dumps(value: object) -> str | None:
