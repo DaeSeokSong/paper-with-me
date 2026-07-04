@@ -15,7 +15,9 @@
 <h2>벤치마크</h2>
 {% for b in boards %}
 <div class="card">
-  <a href="/sota/{{ b.slug }}">{{ b.task }}</a>
+  {# 이 데이터셋의 해당 task 리더보드로 직행 — task 페이지에서 데이터셋을
+     다시 고르게 하지 않는다 (사용성 베타 테스트 지적) #}
+  <a href="/sota/{{ b.slug }}/{{ dataset.name | slugify }}">{{ b.task }} on {{ dataset.name }}</a>
   <span class="muted">결과 {{ b.n_rows }}개</span>
 </div>
 {% endfor %}

@@ -342,6 +342,11 @@ def test_datasets(client):
     r = client.get("/dataset/imagenet")
     assert r.status_code == 200
     assert "벤치마크" in r.text  # ImageNet 리더보드 연결
+    # 벤치마크 카드는 task 페이지가 아니라 해당 리더보드로 직행한다
+    # (task 페이지에서 데이터셋을 다시 고르게 하는 우회 제거)
+    assert 'href="/sota/image-classification/imagenet"' in r.text
+    # 직행 링크가 실제로 열리는지 (slugify 왕복 검증)
+    assert client.get("/sota/image-classification/imagenet").status_code == 200
 
 
 def test_methods(client):
