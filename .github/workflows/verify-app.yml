@@ -51,5 +51,6 @@ jobs:
         run: PWC_DB=data/pwc.sqlite python scripts/smoke_check.py
 
       # 실제 링크를 BFS로 전수 순회 — 깨진 링크·None 노출·미치환 템플릿
+      # (800페이지가 10초에 끝나 상한을 3000으로 — 커버리지 우선)
       - name: Crawl check (follow every rendered link)
-        run: PWC_DB=data/pwc.sqlite python scripts/crawl_check.py 800
+        run: PWC_DB=data/pwc.sqlite python scripts/crawl_check.py 3000
