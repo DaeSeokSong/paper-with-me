@@ -294,6 +294,44 @@ def dataset_leaderboard(conn, task: str, dataset: str) -> dict:
     return {"dataset": dataset, "metric_names": metric_names[:8], "rows": rows}
 
 
+_LOWER_BETTER = re.compile(
+    r"error|loss|wer|cer|fid|mae|rmse|mse|perplexity|flops|params|latency|time",
+    re.IGNORECASE,
+)
+
+
+def board_chart(rows: list[dict], metric: str | None) -> dict | None:
+    """리더보드의 SOTA 추이 차트 데이터 (원본 PWC 리더보드 상단 차트 재현).
+
+    주 지표를 숫자로 파싱해 (날짜, 값) 점들과 '현재까지 최고 기록' 곡선을
+    만든다. 지표명이 낮을수록 좋은 계열(error/loss 등)이면 최소 기준.
+    파싱 가능한 점이 3개 미만이면 차트를 생략한다(None).
+    """
+    if not metric:
+        return None
+    points = []
+    for r in rows:
+        raw = r["metrics"].get(metric) if isinstance(r["metrics"], dict) else None
+        m = re.search(r"-?\d+(\.\d+)?([eE][+-]?\d+)?", str(raw or ""))
+        date = r.get("paper_date") or ""
+        if m and re.match(r"\d{4}-\d{2}", date):
+            points.append({"date": date, "value": float(m.group()),
+                           "model": r.get("model_name") or ""})
+    if len(points) < 3:
+        return None
+    points.sort(key=lambda p: p["date"])
+    lower_better = bool(_LOWER_BETTER.search(metric))
+    best = None
+    frontier = []
+    for p in points:
+        if best is None or (p["value"] < best if lower_better
+                            else p["value"] > best):
+            best = p["value"]
+            frontier.append(p)
+    return {"metric": metric, "points": points, "frontier": frontier,
+            "lower_better": lower_better}
+
+
 # ------------------------------------------------------- datasets/methods
 
 def list_datasets(conn, q: str = "", page: int = 1) -> list[dict]:

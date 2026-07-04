@@ -148,8 +148,12 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         dataset = queries.find_benchmark_dataset(c, task, dataset_slug)
         if dataset is None:
             raise HTTPException(404, "벤치마크를 찾을 수 없습니다")
+        board = queries.dataset_leaderboard(c, task, dataset)
+        chart = queries.board_chart(
+            board["rows"],
+            board["metric_names"][0] if board["metric_names"] else None)
         return render(request, "board.html", task=task, task_slug=task_slug,
-                      board=queries.dataset_leaderboard(c, task, dataset))
+                      board=board, chart=chart)
 
     @app.get("/datasets", response_class=HTMLResponse)
     def datasets(request: Request, q: str = "", page: Page = 1):

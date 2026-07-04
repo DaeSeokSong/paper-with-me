@@ -96,6 +96,45 @@ def test_board_caps_code_links(tmp_path):
     assert "+3" in r.text  # 나머지는 논문 페이지로
 
 
+def test_board_sota_chart_renders(tmp_path):
+    """3개 이상 결과가 있는 벤치마크는 SOTA 추이 SVG 차트를 렌더링한다."""
+    import json as _json
+
+    from pwc import db as pwc_db
+    db_path = tmp_path / "chart.sqlite"
+    conn = pwc_db.connect(db_path)
+    for i, (d, v) in enumerate([("2019-03-01", "88.5"), ("2020-06-01", "91.2"),
+                                ("2021-09-01", "93.7"), ("2022-12-01", "95.1")]):
+        conn.execute(
+            "INSERT INTO sota_rows (task,parent_task,dataset,model_name,metrics,"
+            "paper_url,paper_title,paper_date,code_links) VALUES (?,?,?,?,?,?,?,?,?)",
+            ("T", None, "DS", f"M{i}", _json.dumps({"Accuracy": v}),
+             f"https://x/paper/p{i}", f"P{i}", d, "[]"),
+        )
+    conn.commit()
+    conn.close()
+    c = TestClient(create_app(db_path))
+    r = c.get("/sota/t/ds")
+    assert r.status_code == 200
+    assert "<svg" in r.text and "<polyline" in r.text
+    assert r.text.count("<circle") == 4
+
+
+def test_board_chart_helper():
+    from app import queries
+
+    rows = [
+        {"metrics": {"Error rate": "5.2"}, "paper_date": "2020-01-01", "model_name": "A"},
+        {"metrics": {"Error rate": "3.1"}, "paper_date": "2021-01-01", "model_name": "B"},
+        {"metrics": {"Error rate": "4.0"}, "paper_date": "2022-01-01", "model_name": "C"},
+    ]
+    chart = queries.board_chart(rows, "Error rate")
+    assert chart["lower_better"] is True
+    # 낮을수록 좋은 지표의 frontier: 5.2 → 3.1 (4.0은 기록 갱신 아님)
+    assert [p["value"] for p in chart["frontier"]] == [5.2, 3.1]
+    assert queries.board_chart(rows[:2], "Error rate") is None  # 점 부족
+
+
 def test_empty_metric_columns_pruned(tmp_path):
     import json as _json
 

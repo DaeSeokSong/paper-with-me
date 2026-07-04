@@ -4,6 +4,46 @@
 <p class="muted"><a href="/sota/{{ task_slug }}">{{ task }}</a> 벤치마크</p>
 <h1>{{ task }} on {{ board.dataset }}</h1>
 <p class="muted">{{ board.rows | length }}개 결과</p>
+
+{% if chart %}
+{# 원본 PWC 리더보드 상단의 SOTA 추이 차트 — 점: 개별 결과, 선: 최고 기록 #}
+{% set dates = chart.points | map(attribute="date") | list %}
+{% set values = chart.points | map(attribute="value") | list %}
+{% set dmin, dmax = dates | min, dates | max %}
+{% set vmin, vmax = values | min, values | max %}
+{% set vspan = (vmax - vmin) or 1 %}
+<div class="table-wrap">
+<svg viewBox="0 0 1000 300" style="width:100%;max-width:900px;min-width:520px"
+     role="img" aria-label="{{ chart.metric }} SOTA 추이">
+  <line x1="40" y1="260" x2="980" y2="260" stroke="var(--border)"/>
+  <line x1="40" y1="20" x2="40" y2="260" stroke="var(--border)"/>
+  <text x="8" y="24" font-size="11" fill="var(--muted)">{{ "%.4g" | format(vmax) }}</text>
+  <text x="8" y="262" font-size="11" fill="var(--muted)">{{ "%.4g" | format(vmin) }}</text>
+  <text x="40" y="285" font-size="11" fill="var(--muted)">{{ dmin[:7] }}</text>
+  <text x="920" y="285" font-size="11" fill="var(--muted)">{{ dmax[:7] }}</text>
+  <text x="500" y="14" font-size="12" text-anchor="middle" fill="var(--muted)">{{ chart.metric }}{% if chart.lower_better %} (낮을수록 좋음){% endif %}</text>
+  {% set span_days = ((dmax[:4] | int) * 372 + (dmax[5:7] | int) * 31 + (dmax[8:10] | int(0)))
+                   - ((dmin[:4] | int) * 372 + (dmin[5:7] | int) * 31 + (dmin[8:10] | int(0))) or 1 %}
+  {% set pts = [] %}
+  {% for p in chart.frontier %}
+    {% set px = 40 + 920 * (((p.date[:4] | int) * 372 + (p.date[5:7] | int) * 31 + (p.date[8:10] | int(0)))
+                 - ((dmin[:4] | int) * 372 + (dmin[5:7] | int) * 31 + (dmin[8:10] | int(0)))) / span_days %}
+    {% set py = 260 - 240 * (p.value - vmin) / vspan %}
+    {% if pts.append("%.1f,%.1f" | format(px, py)) %}{% endif %}
+  {% endfor %}
+  <polyline points="{{ pts | join(' ') }}" fill="none" stroke="#21cbce" stroke-width="2"/>
+  {% for p in chart.points %}
+    {% set px = 40 + 920 * (((p.date[:4] | int) * 372 + (p.date[5:7] | int) * 31 + (p.date[8:10] | int(0)))
+                 - ((dmin[:4] | int) * 372 + (dmin[5:7] | int) * 31 + (dmin[8:10] | int(0)))) / span_days %}
+    {% set py = 260 - 240 * (p.value - vmin) / vspan %}
+    <circle cx="{{ '%.1f' | format(px) }}" cy="{{ '%.1f' | format(py) }}" r="4"
+            fill="#21cbce" fill-opacity="0.45">
+      <title>{{ p.model }} — {{ p.value }} ({{ p.date }})</title>
+    </circle>
+  {% endfor %}
+</svg>
+</div>
+{% endif %}
 <div class="table-wrap">
 <table>
   <tr>
