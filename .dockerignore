@@ -1,0 +1,9 @@
+.git/
+data/
+tests/
+docs/
+scripts/
+.github/
+__pycache__/
+*.sqlite
+*.egg-info/

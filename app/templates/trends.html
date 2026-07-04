@@ -5,6 +5,7 @@
 <p class="muted">연도별 논문 구현 프레임워크 점유율 (%) — 원본 Papers with Code Trends 페이지 재현</p>
 
 {% if trends.years %}
+<div class="table-wrap">
 <table>
   <tr><th>Framework</th>{% for y in trends.years %}<th>{{ y }}</th>{% endfor %}</tr>
   {% for fw, values in trends.series.items() %}
@@ -19,6 +20,7 @@
   </tr>
   {% endfor %}
 </table>
+</div>
 {% else %}
 <p>데이터가 없습니다. <code>python -m pwc build</code>로 데이터를 적재하세요.</p>
 {% endif %}

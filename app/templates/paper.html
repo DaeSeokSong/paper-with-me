@@ -36,6 +36,7 @@
 
 {% if results %}
 <h2>Results ({{ results | length }})</h2>
+<div class="table-wrap">
 <table>
   <tr><th>Task</th><th>Dataset</th><th>Model</th><th>Metrics</th></tr>
   {% for r in results %}
@@ -47,5 +48,6 @@
   </tr>
   {% endfor %}
 </table>
+</div>
 {% endif %}
 {% endblock %}
