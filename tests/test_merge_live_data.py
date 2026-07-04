@@ -1,13 +1,14 @@
 """재빌드 시 수집 누적분 이관(merge_live_data) 테스트 — 데이터 소실 체인 방지."""
 
-import json
 import sqlite3
+import sys
 from pathlib import Path
 
-import pytest
-
 from pwc import db, ingest
-from scripts.merge_live_data import merge
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from scripts.merge_live_data import merge  # noqa: E402
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
