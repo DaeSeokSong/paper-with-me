@@ -14,30 +14,37 @@
 {% set dmin, dmax = dates | min, dates | max %}
 {% set vmin, vmax = values | min, values | max %}
 {% set vspan = (vmax - vmin) or 1 %}
+{# 차트 제목은 SVG 밖 캡션으로 — SVG 안 텍스트는 화면 크기에 따라
+   크기·위치가 어긋난다 (사용자 보고). 축 라벨은 축선에 정렬하고
+   중간 눈금선을 넣어 값을 읽을 수 있게 한다. #}
+<p class="muted chart-title">{{ chart.metric }}{% if chart.lower_better %} <span class="badge">낮을수록 좋음</span>{% endif %}</p>
 <div class="table-wrap">
 <svg viewBox="0 0 1000 300" style="width:100%;max-width:900px;min-width:520px"
      role="img" aria-label="{{ chart.metric }} SOTA 추이">
-  <line x1="40" y1="260" x2="980" y2="260" stroke="var(--border)"/>
-  <line x1="40" y1="20" x2="40" y2="260" stroke="var(--border)"/>
-  <text x="8" y="24" font-size="18" fill="var(--muted)">{{ "%.4g" | format(vmax) }}</text>
-  <text x="8" y="262" font-size="18" fill="var(--muted)">{{ "%.4g" | format(vmin) }}</text>
-  <text x="40" y="285" font-size="18" fill="var(--muted)">{{ dmin[:7] }}</text>
-  <text x="920" y="285" font-size="18" fill="var(--muted)">{{ dmax[:7] }}</text>
-  <text x="500" y="14" font-size="20" text-anchor="middle" fill="var(--muted)">{{ chart.metric }}{% if chart.lower_better %} (낮을수록 좋음){% endif %}</text>
+  {% for frac in (0.0, 0.25, 0.5, 0.75, 1.0) %}
+  {% set gy = 260 - 220 * frac %}
+  <line x1="88" y1="{{ gy }}" x2="980" y2="{{ gy }}" stroke="var(--border)"
+        stroke-width="{{ 1.5 if frac == 0.0 else 1 }}"
+        {% if frac not in (0.0,) %}stroke-dasharray="3 5"{% endif %}/>
+  <text x="80" y="{{ gy + 5 }}" font-size="15" text-anchor="end"
+        fill="var(--muted)">{{ "%.4g" | format(vmin + vspan * frac) }}</text>
+  {% endfor %}
+  <text x="88" y="288" font-size="15" fill="var(--muted)">{{ dmin[:7] }}</text>
+  <text x="980" y="288" font-size="15" text-anchor="end" fill="var(--muted)">{{ dmax[:7] }}</text>
   {% set span_days = ((dmax[:4] | int) * 372 + (dmax[5:7] | int) * 31 + (dmax[8:10] | int(0)))
                    - ((dmin[:4] | int) * 372 + (dmin[5:7] | int) * 31 + (dmin[8:10] | int(0))) or 1 %}
   {% set pts = [] %}
   {% for p in chart.frontier %}
-    {% set px = 40 + 920 * (((p.date[:4] | int) * 372 + (p.date[5:7] | int) * 31 + (p.date[8:10] | int(0)))
+    {% set px = 88 + 892 * (((p.date[:4] | int) * 372 + (p.date[5:7] | int) * 31 + (p.date[8:10] | int(0)))
                  - ((dmin[:4] | int) * 372 + (dmin[5:7] | int) * 31 + (dmin[8:10] | int(0)))) / span_days %}
-    {% set py = 260 - 240 * (p.value - vmin) / vspan %}
+    {% set py = 260 - 220 * (p.value - vmin) / vspan %}
     {% if pts.append("%.1f,%.1f" | format(px, py)) %}{% endif %}
   {% endfor %}
   {# 원본 차트 색: SOTA 추세선 #21ccc7, 기타 결과 점 #ddd (원본 JSON 확인) #}
   {% for p in chart.points %}
-    {% set px = 40 + 920 * (((p.date[:4] | int) * 372 + (p.date[5:7] | int) * 31 + (p.date[8:10] | int(0)))
+    {% set px = 88 + 892 * (((p.date[:4] | int) * 372 + (p.date[5:7] | int) * 31 + (p.date[8:10] | int(0)))
                  - ((dmin[:4] | int) * 372 + (dmin[5:7] | int) * 31 + (dmin[8:10] | int(0)))) / span_days %}
-    {% set py = 260 - 240 * (p.value - vmin) / vspan %}
+    {% set py = 260 - 220 * (p.value - vmin) / vspan %}
     <circle cx="{{ '%.1f' | format(px) }}" cy="{{ '%.1f' | format(py) }}" r="4"
             fill="#bbb" fill-opacity="0.65">
       <title>{{ p.model }} — {{ p.value }} ({{ p.date }})</title>
@@ -45,9 +52,9 @@
   {% endfor %}
   <polyline points="{{ pts | join(' ') }}" fill="none" stroke="#21ccc7" stroke-width="2"/>
   {% for p in chart.frontier %}
-    {% set px = 40 + 920 * (((p.date[:4] | int) * 372 + (p.date[5:7] | int) * 31 + (p.date[8:10] | int(0)))
+    {% set px = 88 + 892 * (((p.date[:4] | int) * 372 + (p.date[5:7] | int) * 31 + (p.date[8:10] | int(0)))
                  - ((dmin[:4] | int) * 372 + (dmin[5:7] | int) * 31 + (dmin[8:10] | int(0)))) / span_days %}
-    {% set py = 260 - 240 * (p.value - vmin) / vspan %}
+    {% set py = 260 - 220 * (p.value - vmin) / vspan %}
     <circle cx="{{ '%.1f' | format(px) }}" cy="{{ '%.1f' | format(py) }}" r="5" fill="#21ccc7">
       <title>{{ p.model }} — {{ p.value }} ({{ p.date }})</title>
     </circle>
