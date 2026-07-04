@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ q }} · 검색 · paper-with-me{% endblock %}
+{% block title %}{% if q %}{{ q }} · {% endif %}검색 · paper-with-me{% endblock %}
 {% block content %}
 <h1>검색{% if q %}: “{{ q }}”{% endif %}</h1>
 {% if not q %}<p class="muted">검색어를 입력하세요. 논문 제목과 초록에서 찾습니다.</p>{% endif %}

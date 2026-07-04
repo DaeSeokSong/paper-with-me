@@ -100,4 +100,5 @@ def test_methods(client):
 def test_trends(client):
     r = client.get("/trends")
     assert r.status_code == 200
-    assert "tf" in r.text and "pytorch" in r.text
+    # 원시 코드값(tf/pytorch)이 아닌 표시명으로 렌더링
+    assert "TensorFlow" in r.text and "PyTorch" in r.text

@@ -8,9 +8,12 @@
 <div class="table-wrap">
 <table>
   <tr><th>Framework</th>{% for y in trends.years %}<th>{{ y }}</th>{% endfor %}</tr>
+  {% set labels = {"tf": "TensorFlow", "pytorch": "PyTorch", "jax": "JAX",
+                   "mxnet": "MXNet", "caffe2": "Caffe2", "torch": "Torch",
+                   "paddle": "PaddlePaddle", "mindspore": "MindSpore"} %}
   {% for fw, values in trends.series.items() %}
   <tr>
-    <td><b>{{ fw }}</b></td>
+    <td><b>{{ labels.get(fw, fw) }}</b></td>
     {% for v in values %}
     <td>
       {{ v }}

@@ -69,6 +69,9 @@ def upsert_papers(conn: sqlite3.Connection, papers: Iterable[dict],
             "SELECT arxiv_id FROM papers WHERE arxiv_id IS NOT NULL"
         )
     }
+    taken_urls = {
+        r[0] for r in conn.execute("SELECT paper_url FROM papers")
+    }
     inserted = 0
     for p in papers:
         if not p.get("arxiv_id") or p["arxiv_id"] in existing:
@@ -76,6 +79,10 @@ def upsert_papers(conn: sqlite3.Connection, papers: Iterable[dict],
         slug = slugify(p["title"])
         if not slug:
             continue
+        # 제목 slug 충돌(동명 논문·아카이브 기존 slug) 시 arxiv_id로 유일화 —
+        # OR IGNORE에 걸려 조용히 유실되는 것을 방지
+        if PAPER_URL_PREFIX + slug in taken_urls:
+            slug = f"{slug}-{slugify(p['arxiv_id'])}"
         cur = conn.execute(
             """INSERT OR IGNORE INTO papers
                (paper_url, arxiv_id, title, abstract, url_abs, url_pdf,
@@ -96,8 +103,13 @@ def upsert_papers(conn: sqlite3.Connection, papers: Iterable[dict],
                 source,
             ),
         )
+        if cur.rowcount == 0:
+            print(f"[{source}] slug 충돌로 삽입 실패: {p['arxiv_id']} "
+                  f"({slug})", flush=True)
+            continue
         inserted += cur.rowcount
         existing.add(p["arxiv_id"])
+        taken_urls.add(PAPER_URL_PREFIX + slug)
     conn.commit()
     return inserted
 

@@ -31,17 +31,22 @@ jobs:
           python-version: "3.12"
 
       - name: Install
-        run: pip install huggingface_hub
+        run: pip install huggingface_hub && pip install -e ".[stream,web,dev]"
 
       - name: Download latest data snapshot artifact
         if: env.HF_TOKEN != ''
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          id=$(gh api "repos/${{ github.repository }}/actions/artifacts?name=pwc-sqlite&per_page=1" \
-               --jq '.artifacts[0].id')
+          id=$(gh api "repos/${{ github.repository }}/actions/artifacts?name=pwc-sqlite&per_page=100" \
+               --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last | .id')
           gh api "repos/${{ github.repository }}/actions/artifacts/$id/zip" > snapshot.zip
           mkdir -p data && unzip -o snapshot.zip -d data && rm snapshot.zip
+
+      # 깨진 스냅샷이 라이브로 나가지 않도록 배포 직전에 게이트를 건다
+      - name: Smoke check before deploying
+        if: env.HF_TOKEN != ''
+        run: PWC_DB=data/pwc.sqlite python scripts/smoke_check.py
 
       - name: Deploy to Hugging Face (data + Space)
         run: python scripts/deploy_hf.py

@@ -122,6 +122,27 @@ def main() -> int:
     check("Trends (프레임워크 점유율)",
           r.status_code == 200 and "pytorch" in r.text.lower())
 
+    r = get("/papers", params={"page": 2})
+    check("논문 목록 페이지네이션", r.status_code == 200)
+
+    r = get("/paper/definitely-not-a-real-paper-xyz")
+    check("404가 HTML 에러 페이지로 렌더링",
+          r.status_code == 404 and "<html" in r.text)
+
+    # Phase 2 수집분이 검색에 반영되는지 (수집분이 있는 스냅샷에서만)
+    fresh = conn.execute(
+        "SELECT paper_url, title FROM papers WHERE source != 'archive' "
+        "AND title IS NOT NULL ORDER BY date DESC LIMIT 1"
+    ).fetchone()
+    if fresh:
+        r = get("/search", params={"q": fresh["title"]})
+        slug = fresh["paper_url"].rstrip("/").rsplit("/", 1)[-1]
+        check("수집 논문 검색 노출 (FTS 동기화)",
+              r.status_code == 200 and slug in r.text,
+              fresh["title"][:60])
+    else:
+        print("[SKIP] 수집 논문 검색 — source != 'archive' 논문 없음")
+
     check(f"모든 페이지 응답 {SLOW:.0f}초 이내", not slow_pages,
           ", ".join(f"{p} {t:.1f}s" for p, t in slow_pages))
 

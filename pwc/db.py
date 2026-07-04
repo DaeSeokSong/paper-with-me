@@ -93,12 +93,33 @@ MIGRATIONS = [
     "ALTER TABLE papers ADD COLUMN source TEXT DEFAULT 'archive'",
     "ALTER TABLE repos ADD COLUMN source TEXT DEFAULT 'archive'",
     "ALTER TABLE repos ADD COLUMN stars INTEGER",
+    # 원본 evaluation-tables의 지표 순서(주 지표가 첫 번째). 리더보드 컬럼
+    # 선택이 빈도 추정이 아닌 원본 정보를 쓰도록 보존한다.
+    "ALTER TABLE sota_rows ADD COLUMN metrics_order TEXT",
 ]
 
 FTS_SCHEMA = """
 CREATE VIRTUAL TABLE IF NOT EXISTS papers_fts USING fts5(
     title, abstract, content='papers', content_rowid='rowid'
 );
+
+-- 외부 콘텐츠 FTS는 자동 동기화가 없다. 트리거가 없으면 수집기가 나중에
+-- 넣는 논문이 검색에서 영구 누락되고, OR REPLACE의 rowid 재배정으로
+-- 인덱스가 오염되어 오검색까지 발생한다 (FTS5 공식 동기화 패턴).
+CREATE TRIGGER IF NOT EXISTS papers_fts_ai AFTER INSERT ON papers BEGIN
+    INSERT INTO papers_fts(rowid, title, abstract)
+    VALUES (new.rowid, new.title, new.abstract);
+END;
+CREATE TRIGGER IF NOT EXISTS papers_fts_ad AFTER DELETE ON papers BEGIN
+    INSERT INTO papers_fts(papers_fts, rowid, title, abstract)
+    VALUES ('delete', old.rowid, old.title, old.abstract);
+END;
+CREATE TRIGGER IF NOT EXISTS papers_fts_au AFTER UPDATE ON papers BEGIN
+    INSERT INTO papers_fts(papers_fts, rowid, title, abstract)
+    VALUES ('delete', old.rowid, old.title, old.abstract);
+    INSERT INTO papers_fts(rowid, title, abstract)
+    VALUES (new.rowid, new.title, new.abstract);
+END;
 """
 
 
@@ -115,8 +136,10 @@ def connect(db_path: Path) -> sqlite3.Connection:
     for migration in MIGRATIONS:
         try:
             conn.execute(migration)
-        except sqlite3.OperationalError:
-            pass  # 이미 적용됨
+        except sqlite3.OperationalError as e:
+            # 멱등 재실행(중복 컬럼)만 무시하고 실제 오류는 드러낸다
+            if "duplicate column name" not in str(e):
+                raise
     conn.commit()
     return conn
 
@@ -132,3 +155,22 @@ def rebuild_fts(conn: sqlite3.Connection) -> None:
     if has_fts(conn):
         conn.execute("INSERT INTO papers_fts(papers_fts) VALUES('rebuild')")
         conn.commit()
+
+
+def sync_fts(conn: sqlite3.Connection) -> int:
+    """FTS 인덱스에 빠진 논문을 증분 반영한다.
+
+    동기화 트리거 도입 전에 수집된 스냅샷(트리거 없이 INSERT된 행)을
+    복구하는 용도. 트리거가 있는 DB에서는 no-op이다.
+    """
+    if not has_fts(conn):
+        return 0
+    # 외부 콘텐츠 FTS는 `SELECT rowid FROM papers_fts`가 원본 테이블을 그대로
+    # 비추므로, 실제 색인된 문서 목록은 내부 docsize 테이블에서 읽는다.
+    cur = conn.execute(
+        """INSERT INTO papers_fts(rowid, title, abstract)
+           SELECT p.rowid, p.title, p.abstract FROM papers p
+           WHERE p.rowid NOT IN (SELECT id FROM papers_fts_docsize)"""
+    )
+    conn.commit()
+    return cur.rowcount

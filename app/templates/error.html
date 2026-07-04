@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ status_code }} · paper-with-me{% endblock %}
+{% block content %}
+<h1>{{ status_code }}</h1>
+<p>{{ detail or "요청을 처리할 수 없습니다." }}</p>
+<p>
+  <a href="/">홈으로</a> ·
+  <a href="/sota">Browse State-of-the-Art</a> ·
+  <a href="/search">논문 검색</a>
+</p>
+{% endblock %}

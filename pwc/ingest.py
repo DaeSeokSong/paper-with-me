@@ -110,10 +110,19 @@ def _executemany(conn: sqlite3.Connection, sql: str, rows: Iterable[tuple]) -> i
 
 
 def ingest_papers(conn: sqlite3.Connection, path: Path) -> int:
-    sql = """INSERT OR REPLACE INTO papers
+    # OR REPLACE는 DELETE+INSERT라 rowid가 바뀌어 외부 콘텐츠 FTS를
+    # 오염시키고, 명시하지 않은 컬럼(source 등)을 DEFAULT로 리셋한다.
+    # ON CONFLICT DO UPDATE는 rowid와 미명시 컬럼을 보존한다.
+    sql = """INSERT INTO papers
              (paper_url, arxiv_id, title, abstract, url_abs, url_pdf,
               proceeding, date, authors, tasks, methods)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?)"""
+             VALUES (?,?,?,?,?,?,?,?,?,?,?)
+             ON CONFLICT(paper_url) DO UPDATE SET
+               arxiv_id=excluded.arxiv_id, title=excluded.title,
+               abstract=excluded.abstract, url_abs=excluded.url_abs,
+               url_pdf=excluded.url_pdf, proceeding=excluded.proceeding,
+               date=excluded.date, authors=excluded.authors,
+               tasks=excluded.tasks, methods=excluded.methods"""
     rows = (
         (
             r.get("paper_url") or r.get("url_abs") or r.get("title"),
@@ -134,10 +143,14 @@ def ingest_papers(conn: sqlite3.Connection, path: Path) -> int:
 
 
 def ingest_links(conn: sqlite3.Connection, path: Path) -> int:
-    sql = """INSERT OR REPLACE INTO repos
+    sql = """INSERT INTO repos
              (paper_url, repo_url, is_official, framework,
               mentioned_in_paper, mentioned_in_github)
-             VALUES (?,?,?,?,?,?)"""
+             VALUES (?,?,?,?,?,?)
+             ON CONFLICT(paper_url, repo_url) DO UPDATE SET
+               is_official=excluded.is_official, framework=excluded.framework,
+               mentioned_in_paper=excluded.mentioned_in_paper,
+               mentioned_in_github=excluded.mentioned_in_github"""
     rows = (
         (
             r.get("paper_url"),
@@ -207,8 +220,8 @@ def ingest_evaluations(conn: sqlite3.Connection, path: Path) -> int:
     재귀적으로 평탄화하여 sota_rows에 적재한다."""
     sql = """INSERT INTO sota_rows
              (task, parent_task, dataset, model_name, metrics,
-              paper_url, paper_title, paper_date, code_links)
-             VALUES (?,?,?,?,?,?,?,?,?)"""
+              paper_url, paper_title, paper_date, code_links, metrics_order)
+             VALUES (?,?,?,?,?,?,?,?,?,?)"""
     conn.execute("DELETE FROM sota_rows")
 
     def flatten(task_obj: dict, parent: str | None) -> Iterator[tuple]:
@@ -216,6 +229,8 @@ def ingest_evaluations(conn: sqlite3.Connection, path: Path) -> int:
         for ds in _nested(task_obj.get("datasets")) or []:
             dataset_name = ds.get("dataset")
             sota = _nested(ds.get("sota")) or {}
+            # 원본 지표 순서(첫 번째가 주 지표) — 리더보드 컬럼 선택에 사용
+            metrics_order = _dumps(_nested(sota.get("metrics")))
             for row in _nested(sota.get("rows")) or []:
                 yield (
                     task_name,
@@ -227,6 +242,7 @@ def ingest_evaluations(conn: sqlite3.Connection, path: Path) -> int:
                     row.get("paper_title"),
                     row.get("paper_date"),
                     _dumps(_nested(row.get("code_links"))),
+                    metrics_order,
                 )
         for sub in _nested(task_obj.get("subtasks")) or []:
             yield from flatten(sub, task_name)

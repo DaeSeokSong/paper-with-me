@@ -41,8 +41,21 @@ def paper_slug(paper_url: str | None) -> str:
     return (paper_url or "").rstrip("/").rsplit("/", 1)[-1]
 
 
-def _db_key(conn) -> str:
-    return conn.execute("PRAGMA database_list").fetchone()[2]
+def _db_key(conn) -> tuple:
+    """캐시 키: 경로 + 파일 mtime/크기 — 같은 경로에 스냅샷이 교체되는
+    배포 환경(update-data 일일 갱신)에서도 캐시가 무효화되도록 한다."""
+    path = conn.execute("PRAGMA database_list").fetchone()[2]
+    try:
+        st = Path(path).stat()
+        return (path, st.st_mtime_ns, st.st_size)
+    except OSError:
+        return (path, 0, 0)
+
+
+def _like(term: str) -> str:
+    r"""LIKE 패턴용 이스케이프 — 사용자 입력의 %/_가 와일드카드로 해석되지
+    않도록 한다. 반드시 ESCAPE '\' 절과 함께 사용."""
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 # ---------------------------------------------------------------- papers
@@ -61,6 +74,9 @@ def trending_papers(conn, limit: int = 10) -> list[dict]:
     전체 JOIN+GROUP BY(300k×576k)는 수십 초가 걸리므로, 날짜 인덱스로 최신
     논문 일부만 훑고 논문별 구현 수는 PK 프리픽스 조회로 센다.
     """
+    # 신호(코드 링크·업보트·스타)가 있는 논문만 대상으로 최신 창을 자른다.
+    # 무신호 신규 논문이 창을 채워 트렌딩이 통째로 비는 것을 방지 (창 절단
+    # 전에 필터가 걸려야 한다).
     rows = conn.execute(
         """SELECT p.*,
                   (SELECT COUNT(*) FROM repos r WHERE r.paper_url = p.paper_url)
@@ -69,12 +85,11 @@ def trending_papers(conn, limit: int = 10) -> list[dict]:
            FROM papers p
            LEFT JOIN signals s ON s.paper_url = p.paper_url
            WHERE p.date IS NOT NULL
+             AND (s.paper_url IS NOT NULL
+                  OR EXISTS (SELECT 1 FROM repos r WHERE r.paper_url = p.paper_url))
            ORDER BY p.date DESC LIMIT 300"""
     ).fetchall()
-    papers = [
-        _loads(r, "authors", "tasks", "methods") for r in rows
-        if r["repo_count"] or r["hf_upvotes"] or r["github_stars"]
-    ]
+    papers = [_loads(r, "authors", "tasks", "methods") for r in rows]
     # 최신 창 안에서 인기 신호(업보트·스타·구현 수) 순으로 정렬
     papers.sort(key=lambda p: ((p.get("hf_upvotes") or 0) * 10
                                + (p.get("github_stars") or 0) / 10
@@ -84,13 +99,17 @@ def trending_papers(conn, limit: int = 10) -> list[dict]:
 
 
 def get_paper(conn, slug: str) -> dict | None:
+    # 정규 slug만 허용 — 와일드카드 주입과 무의미한 풀스캔을 차단한다
+    if not re.fullmatch(r"[a-z0-9-]{1,200}", slug):
+        return None
     # 아카이브의 paper_url은 정규 형태라 PK 조회가 먼저 적중한다.
     # LIKE 폴백은 접두사가 다른 예외 레코드용 (576k 행 풀스캔이므로 최후 수단).
     row = conn.execute(
         "SELECT * FROM papers WHERE paper_url = ?",
         (f"https://paperswithcode.com/paper/{slug}",),
     ).fetchone() or conn.execute(
-        "SELECT * FROM papers WHERE paper_url LIKE ? LIMIT 1", (f"%/paper/{slug}",)
+        "SELECT * FROM papers WHERE paper_url LIKE ? ESCAPE '\\' LIMIT 1",
+        (f"%/paper/{_like(slug)}",),
     ).fetchone()
     return _loads(row, "authors", "tasks", "methods") if row else None
 
@@ -121,12 +140,16 @@ def search_papers(conn, q: str, page: int = 1) -> list[dict]:
                    WHERE papers_fts MATCH ? ORDER BY rank LIMIT ? OFFSET ?""",
                 (_fts_query(q), PAGE_SIZE, offset),
             ).fetchall()
-            return [_loads(r, "authors", "tasks", "methods") for r in rows]
+            if rows or page > 1:
+                return [_loads(r, "authors", "tasks", "methods") for r in rows]
+            # 단어 단위 FTS가 0건이면 부분 문자열 LIKE로 폴백 (제목 일부만
+            # 아는 사용자, 이모지 등 토큰화 불가 문자 대응)
         except sqlite3.OperationalError:
-            pass  # 잘못된 FTS 구문은 LIKE로 폴백
+            pass  # 잘못된 FTS 구문도 LIKE로 폴백
     rows = conn.execute(
-        "SELECT * FROM papers WHERE title LIKE ? ORDER BY date DESC LIMIT ? OFFSET ?",
-        (f"%{q}%", PAGE_SIZE, offset),
+        """SELECT * FROM papers WHERE title LIKE ? ESCAPE '\\'
+           ORDER BY date DESC LIMIT ? OFFSET ?""",
+        (f"%{_like(q)}%", PAGE_SIZE, offset),
     ).fetchall()
     return [_loads(r, "authors", "tasks", "methods") for r in rows]
 
@@ -149,21 +172,28 @@ def sota_tasks(conn) -> list[dict]:
     return [dict(r) | {"slug": slugify(r["task"])} for r in rows]
 
 
-_task_maps: dict[str, dict[str, str]] = {}
+_slug_maps: dict[tuple, dict[str, str]] = {}
+
+
+def _slug_map(conn, kind: str, sql: str) -> dict[str, str]:
+    """slug → 이름 맵을 DB 스냅샷(경로+mtime) 단위로 캐시한다.
+    스냅샷이 교체되면 키가 바뀌어 자동 무효화된다."""
+    key = (_db_key(conn), kind)
+    if key not in _slug_maps:
+        # 오래된 스냅샷의 엔트리 정리 (일일 갱신으로 무한 증식 방지)
+        for old in [k for k in _slug_maps if k[1] == kind and k != key]:
+            del _slug_maps[old]
+        _slug_maps[key] = {
+            slugify(r[0]): r[0] for r in conn.execute(sql) if r[0]
+        }
+    return _slug_maps[key]
 
 
 def find_task(conn, slug: str) -> str | None:
-    """slug → task 이름. 목록은 DB 파일별로 1회만 만들어 캐시한다
-    (아카이브는 불변 데이터)."""
-    key = _db_key(conn)
-    if key not in _task_maps:
-        _task_maps[key] = {
-            slugify(r["task"]): r["task"]
-            for r in conn.execute(
-                "SELECT DISTINCT task FROM sota_rows WHERE task IS NOT NULL"
-            )
-        }
-    return _task_maps[key].get(slug)
+    return _slug_map(
+        conn, "task",
+        "SELECT DISTINCT task FROM sota_rows WHERE task IS NOT NULL",
+    ).get(slug)
 
 
 def task_benchmarks(conn, task: str) -> list[dict]:
@@ -172,10 +202,11 @@ def task_benchmarks(conn, task: str) -> list[dict]:
     (대형 task는 dataset이 수천 개라 전체 표를 한 페이지에 담을 수 없다)."""
     rows = conn.execute(
         """SELECT dataset, COUNT(*) AS n_rows FROM sota_rows
-           WHERE task = ? GROUP BY dataset ORDER BY n_rows DESC""",
+           WHERE task = ? AND dataset IS NOT NULL
+           GROUP BY dataset ORDER BY n_rows DESC""",
         (task,),
     ).fetchall()
-    return [dict(r) | {"slug": slugify(r["dataset"] or "")} for r in rows]
+    return [dict(r) | {"slug": slugify(r["dataset"])} for r in rows]
 
 
 def find_benchmark_dataset(conn, task: str, dataset_slug: str) -> str | None:
@@ -186,109 +217,133 @@ def find_benchmark_dataset(conn, task: str, dataset_slug: str) -> str | None:
 
 
 def dataset_leaderboard(conn, task: str, dataset: str) -> dict:
-    """단일 (task, dataset) 리더보드. 첫 번째 지표를 숫자로 파싱해
-    내림차순 정렬하고, 파싱 불가 행은 뒤로 보낸다."""
-    rows = [
-        _loads(r, "metrics", "code_links")
-        for r in conn.execute(
-            "SELECT * FROM sota_rows WHERE task = ? AND dataset = ?",
-            (task, dataset),
-        )
-    ]
-    # 아카이브 리더보드는 지표명이 수천 종에 달할 수 있다(예: ImageNet 3,468종).
-    # 리스트 `not in`으로 모으면 O(행×종수)라 분 단위가 걸리므로 Counter로
-    # 빈도를 세고, 가장 널리 쓰인 지표 8개만 컬럼으로 삼는다.
-    counts = Counter(
-        m for r in rows if isinstance(r["metrics"], dict) for m in r["metrics"]
-    )
-    metric_names = [m for m, _ in counts.most_common(8)]
-    if metric_names:
-        key = metric_names[0]
-        rows.sort(
-            key=lambda r: _metric_value(
-                r["metrics"].get(key) if isinstance(r["metrics"], dict) else None
-            ),
-            reverse=True,
-        )
-    return {"dataset": dataset, "metric_names": metric_names, "rows": rows}
+    """단일 (task, dataset) 리더보드.
 
-
-def _metric_value(raw: object) -> float:
-    m = re.search(r"-?\d+(\.\d+)?", str(raw or ""))
-    return float(m.group()) if m else float("-inf")
+    행 순서는 원본 덤프의 큐레이션 순서(rowid)를 그대로 보존한다 — 지표값
+    기반 재정렬은 낮을수록 좋은 지표(Error rate 등)·표기 스케일 혼용
+    ("95%" vs "0.95")·과학표기에서 순위를 왜곡하므로 하지 않는다.
+    지표 컬럼은 원본 sota.metrics 순서(주 지표가 첫 번째)를 우선 사용하고,
+    없는 구 스냅샷에서는 등장 빈도 상위로 폴백한다.
+    """
+    rows = []
+    metric_names: list[str] = []
+    for r in conn.execute(
+        "SELECT * FROM sota_rows WHERE task = ? AND dataset = ? ORDER BY id",
+        (task, dataset),
+    ):
+        row = _loads(r, "metrics", "code_links")
+        if not metric_names and row.get("metrics_order"):
+            order = strip_nulls(json.loads(row["metrics_order"]))
+            if isinstance(order, list):
+                metric_names = [m for m in order if isinstance(m, str)]
+        rows.append(row)
+    if not metric_names:
+        counts = Counter(
+            m for r in rows if isinstance(r["metrics"], dict) for m in r["metrics"]
+        )
+        metric_names = [m for m, _ in counts.most_common(8)]
+    return {"dataset": dataset, "metric_names": metric_names[:8], "rows": rows}
 
 
 # ------------------------------------------------------- datasets/methods
 
 def list_datasets(conn, q: str = "", page: int = 1) -> list[dict]:
+    pattern = f"%{_like(q)}%"
     rows = conn.execute(
-        """SELECT * FROM datasets WHERE name LIKE ? OR full_name LIKE ?
-           ORDER BY num_papers DESC NULLS LAST LIMIT ? OFFSET ?""",
-        (f"%{q}%", f"%{q}%", PAGE_SIZE, (page - 1) * PAGE_SIZE),
+        """SELECT * FROM datasets
+           WHERE name LIKE ? ESCAPE '\\' OR full_name LIKE ? ESCAPE '\\'
+           ORDER BY num_papers DESC, url LIMIT ? OFFSET ?""",
+        (pattern, pattern, PAGE_SIZE, (page - 1) * PAGE_SIZE),
     ).fetchall()
     return [_loads(r, "modalities", "languages") for r in rows]
 
 
 def get_dataset(conn, slug: str) -> dict | None:
-    for r in conn.execute("SELECT * FROM datasets"):
-        if slugify(r["name"]) == slug:
-            return _loads(r, "modalities", "languages")
-    return None
+    name = _slug_map(conn, "dataset", "SELECT name FROM datasets").get(slug)
+    if name is None:
+        return None
+    row = conn.execute(
+        "SELECT * FROM datasets WHERE name = ?", (name,)
+    ).fetchone()
+    return _loads(row, "modalities", "languages") if row else None
 
 
 def dataset_leaderboards(conn, dataset_name: str) -> list[dict]:
     rows = conn.execute(
         """SELECT task, COUNT(*) AS n_rows FROM sota_rows
-           WHERE dataset LIKE ? GROUP BY task ORDER BY n_rows DESC""",
-        (f"%{dataset_name}%",),
+           WHERE dataset = ? AND task IS NOT NULL
+           GROUP BY task ORDER BY n_rows DESC""",
+        (dataset_name,),
     ).fetchall()
     return [dict(r) | {"slug": slugify(r["task"])} for r in rows]
 
 
 def list_methods(conn, q: str = "", page: int = 1) -> list[dict]:
+    pattern = f"%{_like(q)}%"
     rows = conn.execute(
-        """SELECT * FROM methods WHERE name LIKE ? OR full_name LIKE ?
-           ORDER BY num_papers DESC NULLS LAST LIMIT ? OFFSET ?""",
-        (f"%{q}%", f"%{q}%", PAGE_SIZE, (page - 1) * PAGE_SIZE),
+        """SELECT * FROM methods
+           WHERE name LIKE ? ESCAPE '\\' OR full_name LIKE ? ESCAPE '\\'
+           ORDER BY num_papers DESC, url LIMIT ? OFFSET ?""",
+        (pattern, pattern, PAGE_SIZE, (page - 1) * PAGE_SIZE),
     ).fetchall()
     return [_loads(r, "collections") for r in rows]
 
 
 def get_method(conn, slug: str) -> dict | None:
+    if not re.fullmatch(r"[a-z0-9-]{1,200}", slug):
+        return None
     row = conn.execute(
-        "SELECT * FROM methods WHERE url LIKE ?", (f"%/method/{slug}",)
+        "SELECT * FROM methods WHERE url = ?",
+        (f"https://paperswithcode.com/method/{slug}",),
     ).fetchone()
     if row:
         return _loads(row, "collections")
-    for r in conn.execute("SELECT * FROM methods"):
-        if slugify(r["name"]) == slug:
-            return _loads(r, "collections")
-    return None
+    name = _slug_map(conn, "method", "SELECT name FROM methods").get(slug)
+    if name is None:
+        return None
+    row = conn.execute("SELECT * FROM methods WHERE name = ?", (name,)).fetchone()
+    return _loads(row, "collections") if row else None
 
 
 # ---------------------------------------------------------------- trends
 
+_trends_cache: dict[tuple, dict] = {}
+
+
 def framework_trends(conn) -> dict:
-    """연도별 프레임워크 구현체 점유율 (원본 PWC Trends 페이지 재현)."""
+    """연도별 프레임워크 구현체 점유율 (원본 PWC Trends 페이지 재현).
+
+    30만×57만 JOIN 집계라 요청당 1초 이상 걸리므로 스냅샷 단위로 캐시한다.
+    """
+    key = _db_key(conn)
+    if key in _trends_cache:
+        return _trends_cache[key]
     rows = conn.execute(
-        """SELECT substr(p.date, 1, 4) AS year, r.framework, COUNT(*) AS n
+        """SELECT substr(p.date, 1, 4) AS year, lower(r.framework) AS fw,
+                  COUNT(*) AS n
            FROM repos r JOIN papers p ON p.paper_url = r.paper_url
-           WHERE p.date IS NOT NULL AND r.framework IS NOT NULL
-                 AND r.framework NOT IN ('none', '')
-           GROUP BY year, r.framework ORDER BY year"""
+           WHERE p.date GLOB '[0-9][0-9][0-9][0-9]*'
+                 AND r.framework IS NOT NULL
+                 AND lower(r.framework) NOT IN ('none', '')
+           GROUP BY year, fw ORDER BY year"""
     ).fetchall()
     years = sorted({r["year"] for r in rows})
-    frameworks = sorted({r["framework"] for r in rows})
-    counts = {(r["year"], r["framework"]): r["n"] for r in rows}
-    series = {}
-    for fw in frameworks:
-        total_by_year = {y: sum(counts.get((y, f), 0) for f in frameworks) for y in years}
-        series[fw] = [
+    frameworks = sorted({r["fw"] for r in rows})
+    counts = {(r["year"], r["fw"]): r["n"] for r in rows}
+    total_by_year = {
+        y: sum(counts.get((y, f), 0) for f in frameworks) for y in years
+    }
+    series = {
+        fw: [
             round(100 * counts.get((y, fw), 0) / total_by_year[y], 1)
             if total_by_year[y] else 0.0
             for y in years
         ]
-    return {"years": years, "series": series}
+        for fw in frameworks
+    }
+    _trends_cache.clear()
+    _trends_cache[key] = {"years": years, "series": series}
+    return _trends_cache[key]
 
 
 def stats(conn) -> dict:

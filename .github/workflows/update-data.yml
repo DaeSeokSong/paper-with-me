@@ -32,8 +32,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          id=$(gh api "repos/${{ github.repository }}/actions/artifacts?name=pwc-sqlite&per_page=1" \
-               --jq '.artifacts[0].id')
+          id=$(gh api "repos/${{ github.repository }}/actions/artifacts?name=pwc-sqlite&per_page=100" \
+               --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last | .id')
           echo "artifact id: $id"
           gh api "repos/${{ github.repository }}/actions/artifacts/$id/zip" > snapshot.zip
           mkdir -p data && unzip -o snapshot.zip -d data && rm snapshot.zip
@@ -46,12 +46,14 @@ jobs:
       - name: Show stats
         run: python -m pwc stats --data-dir data
 
+      # 수집이 스냅샷을 망가뜨렸으면 '최신 아티팩트'로 등록되기 전에 막는다
+      # (build-data와 달리 이 작업은 저렴해서 재실행 부담이 없다)
+      - name: Smoke check against refreshed data
+        run: PWC_DB=data/pwc.sqlite python scripts/smoke_check.py
+
       - name: Upload refreshed snapshot
         uses: actions/upload-artifact@v4
         with:
           name: pwc-sqlite
           path: data/pwc.sqlite
           retention-days: 30
-
-      - name: Smoke check against refreshed data
-        run: PWC_DB=data/pwc.sqlite python scripts/smoke_check.py

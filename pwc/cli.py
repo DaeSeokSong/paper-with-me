@@ -91,6 +91,10 @@ def cmd_collect(args: argparse.Namespace) -> int:
         except Exception as e:  # noqa: BLE001 - 소스별 독립 실행
             print(f"[{source}] 수집 실패: {e}", file=sys.stderr)
             failures += 1
+    # 트리거 도입 전 스냅샷에서 수집된 논문의 검색 인덱스 복구 (멱등)
+    synced = db.sync_fts(conn)
+    if synced:
+        print(f"FTS 증분 동기화: {synced:,}편", flush=True)
     conn.close()
     return 1 if failures == len(args.source) else 0
 

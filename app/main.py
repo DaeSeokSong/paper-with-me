@@ -13,15 +13,21 @@
 from __future__ import annotations
 
 import os
+import urllib.parse
 from pathlib import Path
+from typing import Annotated
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from . import queries
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
+
+# page 파라미터: 음수/0은 OFFSET 왜곡, 초대형 정수는 SQLite OverflowError(500)
+Page = Annotated[int, Query(ge=1, le=100_000)]
 
 
 def create_app(db_path: Path | None = None) -> FastAPI:
@@ -38,6 +44,21 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     def render(request: Request, template: str, **ctx) -> HTMLResponse:
         return templates.TemplateResponse(request, template, ctx)
 
+    # 브라우저 사용자가 raw JSON 에러를 보지 않도록 HTML 에러 페이지를 렌더링
+    @app.exception_handler(HTTPException)
+    async def http_error(request: Request, exc: HTTPException):
+        return templates.TemplateResponse(
+            request, "error.html",
+            {"status_code": exc.status_code, "detail": exc.detail},
+            status_code=exc.status_code)
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(request: Request, exc: RequestValidationError):
+        return templates.TemplateResponse(
+            request, "error.html",
+            {"status_code": 400, "detail": "잘못된 요청 파라미터입니다"},
+            status_code=400)
+
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):
         c = conn()
@@ -47,10 +68,11 @@ def create_app(db_path: Path | None = None) -> FastAPI:
                       stats=queries.stats(c))
 
     @app.get("/search", response_class=HTMLResponse)
-    def search(request: Request, q: str = "", page: int = 1):
+    def search(request: Request, q: str = "", page: Page = 1):
         c = conn()
         papers = queries.search_papers(c, q, page) if q else []
-        return render(request, "search.html", q=q, page=page, papers=papers)
+        return render(request, "search.html", q=q, paper_q=q, page=page,
+                      papers=papers)
 
     @app.get("/paper/{slug}", response_class=HTMLResponse)
     def paper(request: Request, slug: str):
@@ -63,7 +85,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
                       results=queries.paper_results(c, p["paper_url"]))
 
     @app.get("/papers", response_class=HTMLResponse)
-    def papers(request: Request, page: int = 1):
+    def papers(request: Request, page: Page = 1):
         c = conn()
         return render(request, "papers.html", page=page,
                       papers=queries.latest_papers(c, page))
@@ -73,17 +95,26 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         c = conn()
         return render(request, "sota.html", tasks=queries.sota_tasks(c))
 
+    def _search_fallback(slug: str) -> RedirectResponse:
+        # 논문 메타데이터의 task/method가 리더보드·카탈로그에 없는 경우가
+        # 많다(아카이브 특성). 죽은 404 대신 검색으로 안내한다.
+        q = urllib.parse.quote(slug.replace("-", " "))
+        return RedirectResponse(f"/search?q={q}", status_code=302)
+
     @app.get("/sota/{task_slug}", response_class=HTMLResponse)
     def sota_task(request: Request, task_slug: str):
         c = conn()
         task = queries.find_task(c, task_slug)
         if not task:
-            raise HTTPException(404, "task를 찾을 수 없습니다")
+            return _search_fallback(task_slug)
         return render(request, "task.html", task=task, task_slug=task_slug,
                       benchmarks=queries.task_benchmarks(c, task))
 
-    # 원본 사이트의 /task/{slug} URL도 벤치마크 목록 페이지로 응답한다
-    app.get("/task/{task_slug}", response_class=HTMLResponse)(sota_task)
+    # 원본 사이트의 /task/{slug} URL 호환 — 중복 콘텐츠를 피하기 위해
+    # 정규 URL(/sota/{slug})로 리다이렉트한다
+    @app.get("/task/{task_slug}")
+    def task_alias(task_slug: str):
+        return RedirectResponse(f"/sota/{task_slug}", status_code=301)
 
     @app.get("/sota/{task_slug}/{dataset_slug}", response_class=HTMLResponse)
     def sota_board(request: Request, task_slug: str, dataset_slug: str):
@@ -98,7 +129,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
                       board=queries.dataset_leaderboard(c, task, dataset))
 
     @app.get("/datasets", response_class=HTMLResponse)
-    def datasets(request: Request, q: str = "", page: int = 1):
+    def datasets(request: Request, q: str = "", page: Page = 1):
         c = conn()
         return render(request, "datasets.html", q=q, page=page,
                       datasets=queries.list_datasets(c, q, page))
@@ -113,7 +144,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
                       boards=queries.dataset_leaderboards(c, d["name"]))
 
     @app.get("/methods", response_class=HTMLResponse)
-    def methods(request: Request, q: str = "", page: int = 1):
+    def methods(request: Request, q: str = "", page: Page = 1):
         c = conn()
         return render(request, "methods.html", q=q, page=page,
                       methods=queries.list_methods(c, q, page))
@@ -123,7 +154,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         c = conn()
         m = queries.get_method(c, slug)
         if not m:
-            raise HTTPException(404, "방법론을 찾을 수 없습니다")
+            return _search_fallback(slug)
         return render(request, "method.html", method=m)
 
     @app.get("/trends", response_class=HTMLResponse)

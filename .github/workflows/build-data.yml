@@ -29,8 +29,29 @@ jobs:
       - name: Install pipeline + web app
         run: pip install -e ".[stream,web,dev]"
 
+      - name: Download previous snapshot (live 수집분 이관용)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          id=$(gh api "repos/${{ github.repository }}/actions/artifacts?name=pwc-sqlite" \
+               --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last | .id' || true)
+          if [ -n "$id" ] && [ "$id" != "null" ]; then
+            echo "previous artifact: $id"
+            gh api "repos/${{ github.repository }}/actions/artifacts/$id/zip" > prev.zip
+            mkdir -p prev && unzip -o prev.zip -d prev && rm prev.zip
+          else
+            echo "이전 스냅샷 없음 — 첫 빌드"
+          fi
+
       - name: Download dumps and build SQLite
         run: python -m pwc build --data-dir data
+
+      - name: Merge live-collected data from previous snapshot
+        run: |
+          if [ -f prev/pwc.sqlite ]; then
+            python scripts/merge_live_data.py data/pwc.sqlite prev/pwc.sqlite
+            rm -rf prev
+          fi
 
       - name: Show stats
         run: |

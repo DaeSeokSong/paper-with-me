@@ -21,7 +21,10 @@
 {% if paper.methods %}
 <h2>Methods</h2>
 {% for m in paper.methods %}
-  <a class="badge" href="/method/{{ (m.name if m.name is defined else m) | slugify }}">{{ m.name if m.name is defined else m }}</a>
+  {% set mname = m.get("name") if m is mapping else m %}
+  {% if mname is string and mname %}
+    <a class="badge" href="/method/{{ mname | slugify }}">{{ mname }}</a>
+  {% endif %}
 {% endfor %}
 {% endif %}
 

@@ -20,7 +20,16 @@
       {% if r.paper_url %}<a href="/paper/{{ r.paper_url | paper_slug }}">{{ r.paper_title or "논문" }}</a>{% endif %}
       <span class="muted">{{ r.paper_date or "" }}</span>
     </td>
-    <td>{% for c in r.code_links %}<a href="{{ c.url }}">{{ c.title or "code" }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</td>
+    <td>
+      {%- for c in r.code_links -%}
+        {%- if c is mapping and c.get("url") -%}
+          <a href="{{ c.get('url') }}">{{ c.get("title") or "code" }}</a>
+        {%- elif c is string -%}
+          <a href="{{ c }}">code</a>
+        {%- endif -%}
+        {%- if not loop.last %} · {% endif -%}
+      {%- endfor -%}
+    </td>
   </tr>
   {% endfor %}
 </table>
