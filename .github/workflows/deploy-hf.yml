@@ -19,7 +19,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90  # 13GB 데이터 업로드 + Space 빌드/기동 대기 포함
     env:
       PYTHONUNBUFFERED: "1"
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
