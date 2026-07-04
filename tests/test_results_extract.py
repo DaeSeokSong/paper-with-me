@@ -15,9 +15,21 @@ ABSTRACT_HIT = (
     "previous state of the art."
 )
 ABSTRACT_MISS_RANGE = (
-    "We propose WeirdNet. WeirdNet achieves 12.0% accuracy on CIFAR-100."
+    "We propose WeirdNet for image classification. "
+    "WeirdNet achieves 12.0% accuracy on CIFAR-100."
 )
 ABSTRACT_NO_BENCH = "We study the theory of optimization landscapes."
+# task 언급 없음 — 데이터셋 살포 방지 게이트 검증 (실데이터 1차 가동에서
+# 발견: "CIFAR-10" 언급 하나로 무관한 task 보드 10곳에 추가됨)
+ABSTRACT_NO_TASK = (
+    "We propose SprayNet, a compression method. "
+    "SprayNet achieves 95.00% on CIFAR-100."
+)
+# %-없는 수치는 배속·계수 오인 방지를 위해 무시 ("1.31x speedup" 등)
+ABSTRACT_NO_PERCENT = (
+    "We propose SpeedNet for image classification with a 1.31 speedup "
+    "on CIFAR-100 and accuracy of 95.5 without percent sign."
+)
 
 
 @pytest.fixture()
@@ -67,10 +79,29 @@ def test_rejects_out_of_range_and_no_benchmark(conn):
     _add_paper(conn, "weird-paper", ABSTRACT_MISS_RANGE)
     _add_paper(conn, "theory-paper", ABSTRACT_NO_BENCH)
     assert results_extract.collect(conn) == 0
-    # 시도한 논문은 로그에 남아 재시도하지 않는다 (멱등)
-    assert conn.execute(
-        "SELECT COUNT(*) FROM result_extract_log").fetchone()[0] == 2
+    assert results_extract.collect(conn) == 0  # 재실행도 0 (stateless)
+
+
+def test_rejects_unmentioned_task_and_bare_numbers(conn):
+    _add_paper(conn, "spray-paper", ABSTRACT_NO_TASK)
+    _add_paper(conn, "speed-paper", ABSTRACT_NO_PERCENT)
     assert results_extract.collect(conn) == 0
+
+
+def test_reextraction_purges_stale_auto_rows(conn):
+    """규칙 강화 이전 실행이 남긴 오염 auto 행은 다음 실행에서 정화된다."""
+    conn.execute(
+        "INSERT INTO sota_rows (task,dataset,model_name,metrics,paper_url,"
+        "code_links,source) VALUES (?,?,?,?,?,?,?)",
+        ("Image Classification", "CIFAR-100", "JunkNet",
+         json.dumps({"Percentage correct": "1.31"}),
+         "https://paperswithcode.com/paper/junk", "[]", "auto"),
+    )
+    conn.commit()
+    results_extract.collect(conn)
+    assert conn.execute(
+        "SELECT COUNT(*) FROM sota_rows WHERE source='auto'"
+    ).fetchone()[0] == 0
 
 
 def test_auto_rows_do_not_feed_sanity_baseline(conn):

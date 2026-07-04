@@ -17,7 +17,6 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
-from datetime import datetime, timezone
 
 # 짧은 데이터셋 이름("SST", "NLI" 등)은 초록에서 오탐이 잦다
 MIN_DATASET_LEN = 4
@@ -30,7 +29,6 @@ _MODEL_RE = re.compile(
     r"([A-Z][A-Za-z0-9+_.\-]{1,29})")
 _MODEL_STOP = {"We", "Our", "In", "This", "The", "A", "An", "It", "To"}
 _PERCENT_RE = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*%")
-_NUMBER_RE = re.compile(r"\b(\d{1,3}(?:\.\d+)?)\b")
 
 
 def _norm(s: str) -> str:
@@ -114,9 +112,17 @@ def _sane(value: float, existing: list[float]) -> bool:
 
 
 def extract_from_text(title: str, abstract: str, index: dict) -> list[dict]:
-    """초록에서 (task, dataset, metric, value) 후보를 뽑는다."""
+    """초록에서 (task, dataset, metric, value) 후보를 뽑는다.
+
+    실데이터 1차 가동에서 확인된 오염 패턴을 게이트로 차단한다:
+    - 데이터셋 언급 하나로 그 데이터셋의 모든 task 보드에 살포되는 문제
+      → task 이름이 본문에 실제로 언급된 보드만 대상
+    - "1.31×" 같은 배속·계수를 정확도로 오인하는 문제
+      → % 표기가 붙은 수치만 인정
+    """
     text = f"{title or ''}. {abstract or ''}"
     lower = text.lower()
+    text_norm = _norm(text)
     out = []
     seen: set[tuple] = set()
     for ds_lower, boards in index.items():
@@ -127,14 +133,14 @@ def extract_from_text(title: str, abstract: str, index: dict) -> list[dict]:
             start = max(0, m.start() - WINDOW)
             window = text[start:m.end() + WINDOW]
             window_norm = _norm(window)
-            # 수치: % 표기 우선, 없으면 일반 숫자 중 데이터셋 언급에 근접한 것
+            # % 표기 수치만, 데이터셋 언급에 가까운 순
             nums = [(abs((start + x.start()) - m.start()), x.group(1))
                     for x in _PERCENT_RE.finditer(window)]
-            if not nums:
-                nums = [(abs((start + x.start()) - m.start()), x.group(1))
-                        for x in _NUMBER_RE.finditer(window)]
             nums.sort()
             for board in boards:
+                # 논문이 그 task를 다룬다고 밝힌 보드만 — 데이터셋 살포 방지
+                if _norm(board["task"]) not in text_norm:
+                    continue
                 metric = _match_metric(board["metrics"], window_norm)
                 if not metric:
                     continue
@@ -152,20 +158,28 @@ def extract_from_text(title: str, abstract: str, index: dict) -> list[dict]:
     return out
 
 
-def collect(conn: sqlite3.Connection, max_papers: int = 300) -> int:
-    """추출을 아직 시도하지 않은 신규 수집 논문을 처리한다 (멱등)."""
+def collect(conn: sqlite3.Connection, max_papers: int = 2000) -> int:
+    """수집 논문 전체를 대상으로 auto 행을 재계산한다 (stateless).
+
+    증분(로그) 방식 대신 매 실행 전량 재추출 — 추출 규칙을 강화하면
+    과거 실행이 남긴 오염 행이 다음 실행에서 자동으로 정화된다.
+    텍스트 처리라 수천 편도 수 초면 끝난다.
+    """
+    removed = conn.execute(
+        "DELETE FROM sota_rows WHERE source = 'auto'").rowcount
+    if removed:
+        print(f"[results] 기존 auto 행 {removed}건 재계산", flush=True)
     papers = conn.execute(
         """SELECT paper_url, title, abstract, date FROM papers
            WHERE source != 'archive' AND abstract IS NOT NULL
-             AND paper_url NOT IN (SELECT paper_url FROM result_extract_log)
            ORDER BY date DESC LIMIT ?""",
         (max_papers,),
     ).fetchall()
     if not papers:
         print("[results] 추출 대상 신규 논문 없음", flush=True)
+        conn.commit()
         return 0
     index = _benchmark_index(conn)
-    now = datetime.now(timezone.utc).isoformat()
     added = 0
     for paper_url, title, abstract, date in papers:
         for cand in extract_from_text(title, abstract, index):
@@ -198,10 +212,6 @@ def collect(conn: sqlite3.Connection, max_papers: int = 300) -> int:
             print(f"[results] + {cand['task']} / {cand['dataset']} "
                   f"{cand['metric']}={cand['value']} ← {title[:60]}",
                   flush=True)
-        conn.execute(
-            "INSERT OR REPLACE INTO result_extract_log VALUES (?, ?)",
-            (paper_url, now),
-        )
     conn.commit()
     print(f"[results] {len(papers)}편 검사, {added}행 추가", flush=True)
     return added
