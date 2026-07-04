@@ -106,6 +106,9 @@ def main() -> int:
     check("수치 정합 — CIFAR-100 EffNet-L2(SAM) 96.08",
           "96.08" in r.text and "SAM" in r.text)
     check("리더보드 SOTA 추이 차트 렌더링", "<svg" in r.text)
+    check("리더보드 금·은·동 하이라이트 + 페이지네이션",
+          'class="rank-gold"' in r.text and 'class="rank-top"' in r.text
+          and "페이지당" in r.text)
 
     r = get("/task/semantic-segmentation")
     check("원본 /task/ URL 호환", r.status_code == 200)
@@ -147,8 +150,9 @@ def main() -> int:
     # arXiv-URL 참조 논문의 404(EffNet-L2(SAM) 등)를 놓친 회귀 방지.
     import re as _re
     linked_ok = True
-    for board in ("/sota/image-classification/cifar-100",
-                  "/sota/image-classification/imagenet"):
+    # ?per=100 — 표가 페이지네이션되어도 링크 점검 범위(상위 100행)를 유지
+    for board in ("/sota/image-classification/cifar-100?per=100",
+                  "/sota/image-classification/imagenet?per=100"):
         page = timed_get(client, board)
         hrefs = sorted(set(_re.findall(r'href="(/paper/[^"]+)"', page.text)))
         if not hrefs:

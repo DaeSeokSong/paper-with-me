@@ -159,7 +159,11 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         return RedirectResponse(f"/sota/{task_slug}", status_code=301)
 
     @app.get("/sota/{task_slug}/{dataset_slug}", response_class=HTMLResponse)
-    def sota_board(request: Request, task_slug: str, dataset_slug: str):
+    def sota_board(request: Request, task_slug: str, dataset_slug: str,
+                   page: Page = 1, per: int = 20):
+        # 페이지당 행 수 — 대형 벤치마크(수백~천 행)의 스크롤 부담을 줄인다
+        if per not in queries.BOARD_PAGE_SIZES:
+            per = queries.BOARD_PAGE_SIZE
         c = conn()
         task = queries.find_task(c, task_slug)
         if not task:
@@ -168,11 +172,16 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         if dataset is None:
             raise HTTPException(404, "벤치마크를 찾을 수 없습니다")
         board = queries.dataset_leaderboard(c, task, dataset)
+        # 차트·지표 컬럼 선정은 전체 행 기준, 표만 페이지 단위로 자른다
         chart = queries.board_chart(
             board["rows"],
             board["metric_names"][0] if board["metric_names"] else None)
+        total = len(board["rows"])
+        offset = (page - 1) * per
         return render(request, "board.html", task=task, task_slug=task_slug,
-                      board=board, chart=chart)
+                      board=board, chart=chart, total=total, offset=offset,
+                      rows=board["rows"][offset:offset + per],
+                      page=page, per=per)
 
     @app.get("/datasets", response_class=HTMLResponse)
     def datasets(request: Request, q: str = "", page: Page = 1):

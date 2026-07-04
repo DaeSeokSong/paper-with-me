@@ -60,9 +60,12 @@
     {% for m in board.metric_names %}<th>{{ m }}</th>{% endfor %}
     <th>Paper</th><th>Code</th><th>Year</th>
   </tr>
-  {% for r in board.rows %}
-  <tr>
-    <td class="rank">{{ loop.index }}</td>
+  {% for r in rows %}
+  {% set rank = offset + loop.index %}
+  <tr class="{{ 'rank-gold' if rank == 1 else 'rank-silver' if rank == 2
+                else 'rank-bronze' if rank == 3
+                else 'rank-top' if rank <= 10 else '' }}">
+    <td class="rank"><span class="rank-badge">{{ rank }}</span></td>
     <td><b>{{ r.model_name }}</b></td>
     {% for m in board.metric_names %}<td>{{ r.metrics.get(m, "–") if r.metrics is mapping else "–" }}</td>{% endfor %}
     <td>
@@ -87,5 +90,20 @@
   </tr>
   {% endfor %}
 </table>
+</div>
+
+<div class="pager board-pager">
+  {% if page > 1 %}
+    <a href="?page={{ page - 1 }}&per={{ per }}">← 이전</a>
+  {% endif %}
+  <span class="muted">{{ offset + 1 }}–{{ offset + rows | length }} / {{ total }}</span>
+  {% if offset + rows | length < total %}
+    <a href="?page={{ page + 1 }}&per={{ per }}">다음 →</a>
+  {% endif %}
+  <span class="muted per-picker">페이지당
+    {% for n in (10, 20, 50, 100) %}
+      {% if n == per %}<b>{{ n }}</b>{% else %}<a href="?per={{ n }}">{{ n }}</a>{% endif %}
+    {% endfor %}
+  </span>
 </div>
 {% endblock %}

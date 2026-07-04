@@ -192,6 +192,53 @@ def test_board_caps_code_links(tmp_path):
     assert "+3" in r.text  # 나머지는 논문 페이지로
 
 
+def test_board_pagination_and_rank_medals(tmp_path):
+    """리더보드 표는 기본 20행으로 페이지네이션되고(per=10/20/50/100 선택),
+    전역 순위 기준 1·2·3위는 금·은·동, 4~10위는 별도 배경으로 표시된다."""
+    import json as _json
+
+    from pwc import db as pwc_db
+    db_path = tmp_path / "page.sqlite"
+    conn = pwc_db.connect(db_path)
+    for i in range(25):
+        conn.execute(
+            "INSERT INTO sota_rows (task,parent_task,dataset,model_name,metrics,"
+            "paper_url,paper_title,paper_date,code_links) VALUES (?,?,?,?,?,?,?,?,?)",
+            ("T", None, "DS", f"Model{i:02d}",
+             _json.dumps({"Acc": str(99 - i)}),
+             f"https://paperswithcode.com/paper/p{i}", f"P{i}", "2020-01-01",
+             "[]"),
+        )
+    conn.commit()
+    conn.close()
+    c = TestClient(create_app(db_path))
+
+    # 기본: 20행 + 메달/상위권 클래스 + 페이지당 선택 UI
+    # (차트 SVG 툴팁에는 전체 모델이 있으므로 표 셀(<b>...</b>) 기준으로 확인)
+    r = c.get("/sota/t/ds")
+    assert r.status_code == 200
+    assert "<b>Model19</b>" in r.text and "<b>Model20</b>" not in r.text
+    assert 'class="rank-gold"' in r.text and 'class="rank-silver"' in r.text \
+        and 'class="rank-bronze"' in r.text
+    # CSS 규칙의 rank-top은 제외하고 행(class 속성)만 센다: 4~10위 = 7행
+    assert r.text.count('class="rank-top"') == 7
+    assert "1–20 / 25" in r.text and "페이지당" in r.text
+
+    # 2페이지: 전역 순위 이어짐(21~25), 메달 없음
+    r = c.get("/sota/t/ds", params={"page": 2})
+    assert "<b>Model20</b>" in r.text and "<b>Model19</b>" not in r.text
+    assert ">21</span>" in r.text
+    assert 'class="rank-gold"' not in r.text and 'class="rank-top"' not in r.text
+
+    # 페이지당 10행 선택
+    r = c.get("/sota/t/ds", params={"per": 10})
+    assert "<b>Model09</b>" in r.text and "<b>Model10</b>" not in r.text
+
+    # 허용 밖 값은 기본값으로
+    r = c.get("/sota/t/ds", params={"per": 7})
+    assert "<b>Model19</b>" in r.text and "<b>Model20</b>" not in r.text
+
+
 def test_board_sota_chart_renders(tmp_path):
     """3개 이상 결과가 있는 벤치마크는 SOTA 추이 SVG 차트를 렌더링한다."""
     import json as _json

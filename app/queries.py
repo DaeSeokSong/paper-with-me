@@ -17,6 +17,9 @@ from pwc import db as pwc_db
 from pwc.ingest import strip_nulls
 
 PAGE_SIZE = 20
+# 리더보드 페이지당 행 수 — 기본 20, 사용자가 선택 가능한 값들
+BOARD_PAGE_SIZE = 20
+BOARD_PAGE_SIZES = (10, 20, 50, 100)
 
 
 def connect(db_path: Path) -> sqlite3.Connection:

@@ -180,7 +180,9 @@ def live_check(base: str) -> bool:
     """
     import re
 
-    board_url = base.rstrip("/") + "/sota/image-classification/cifar-100"
+    # ?per=100 — 표 페이지네이션과 무관하게 상위 100행의 링크를 점검
+    board_url = (base.rstrip("/")
+                 + "/sota/image-classification/cifar-100?per=100")
     try:
         with urllib.request.urlopen(board_url, timeout=60) as resp:
             html = resp.read().decode(errors="replace")

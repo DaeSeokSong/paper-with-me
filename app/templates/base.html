@@ -117,6 +117,21 @@
   .repo-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
               padding: 10px 14px; margin: 8px 0; }
   .rank { color: var(--muted); width: 36px; }
+  /* 리더보드 상위권 하이라이트 — 1·2·3위 금·은·동 메달, 4~10위 옅은 강조.
+     반투명 배경이라 라이트/다크 테마 모두에서 자연스럽다. */
+  .rank-badge { display: inline-block; min-width: 24px; height: 24px;
+                line-height: 24px; border-radius: 50%; text-align: center;
+                font-weight: 700; font-size: 12px; }
+  tr.rank-gold .rank-badge { background: #f7c948; color: #5b4300; }
+  tr.rank-silver .rank-badge { background: #c5ced6; color: #333f4d; }
+  tr.rank-bronze .rank-badge { background: #d9905a; color: #40260d; }
+  tr.rank-gold td { background: rgba(247, 201, 72, .14); }
+  tr.rank-silver td { background: rgba(176, 190, 197, .16); }
+  tr.rank-bronze td { background: rgba(217, 144, 90, .14); }
+  tr.rank-top td { background: rgba(33, 203, 199, .08); }
+  .board-pager { align-items: center; flex-wrap: wrap; }
+  .per-picker { margin-left: auto; }
+  .per-picker a, .per-picker b { margin-left: 6px; }
   .stats { display: flex; gap: 24px; flex-wrap: wrap; margin: 16px 0; }
   .stats div { text-align: center; }
   .stats b { display: block; font-size: 22px; }
