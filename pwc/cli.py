@@ -93,6 +93,14 @@ def cmd_collect(args: argparse.Namespace) -> int:
         except Exception as e:  # noqa: BLE001 - 소스별 독립 실행
             print(f"[{source}] 수집 실패: {e}", file=sys.stderr)
             failures += 1
+    # 커뮤니티 리더보드 기여 반영 (contributions/*.json, 멱등)
+    from . import contrib
+
+    try:
+        contrib.ingest_contributions(conn, Path("contributions"))
+    except ValueError as e:
+        print(f"[contrib] {e}", file=sys.stderr)
+        failures += 1
     # 트리거 도입 전 스냅샷에서 수집된 논문의 검색 인덱스 복구 (멱등)
     synced = db.sync_fts(conn)
     if synced:
