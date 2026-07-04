@@ -61,12 +61,22 @@ def trending_papers(conn, limit: int = 10) -> list[dict]:
     rows = conn.execute(
         """SELECT p.*,
                   (SELECT COUNT(*) FROM repos r WHERE r.paper_url = p.paper_url)
-                  AS repo_count
-           FROM papers p WHERE p.date IS NOT NULL
+                  AS repo_count,
+                  s.hf_upvotes, s.github_stars
+           FROM papers p
+           LEFT JOIN signals s ON s.paper_url = p.paper_url
+           WHERE p.date IS NOT NULL
            ORDER BY p.date DESC LIMIT 300"""
     ).fetchall()
-    papers = [_loads(r, "authors", "tasks", "methods") for r in rows
-              if r["repo_count"]]
+    papers = [
+        _loads(r, "authors", "tasks", "methods") for r in rows
+        if r["repo_count"] or r["hf_upvotes"] or r["github_stars"]
+    ]
+    # 최신 창 안에서 인기 신호(업보트·스타·구현 수) 순으로 정렬
+    papers.sort(key=lambda p: ((p.get("hf_upvotes") or 0) * 10
+                               + (p.get("github_stars") or 0) / 10
+                               + (p.get("repo_count") or 0)),
+                reverse=True)
     return papers[:limit]
 
 

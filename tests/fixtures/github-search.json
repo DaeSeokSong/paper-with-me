@@ -1,0 +1,15 @@
+{
+  "total_count": 2,
+  "items": [
+    {
+      "html_url": "https://github.com/carolpark/diffusion-strike-back",
+      "stargazers_count": 512,
+      "language": "Python"
+    },
+    {
+      "html_url": "https://github.com/fork/diffusion-strike-back-fork",
+      "stargazers_count": 3,
+      "language": null
+    }
+  ]
+}

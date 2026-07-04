@@ -77,7 +77,23 @@ CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT
 );
+
+-- Phase 2: 실시간 인기 신호 (아카이브에는 없는 데이터)
+CREATE TABLE IF NOT EXISTS signals (
+    paper_url    TEXT PRIMARY KEY,
+    github_stars INTEGER,
+    hf_upvotes   INTEGER,
+    updated_at   TEXT
+);
 """
+
+# 기존 스냅샷 DB에도 적용되는 컬럼 추가. ALTER는 IF NOT EXISTS가 없으므로
+# 중복 컬럼 오류를 무시하는 방식으로 멱등하게 실행한다.
+MIGRATIONS = [
+    "ALTER TABLE papers ADD COLUMN source TEXT DEFAULT 'archive'",
+    "ALTER TABLE repos ADD COLUMN source TEXT DEFAULT 'archive'",
+    "ALTER TABLE repos ADD COLUMN stars INTEGER",
+]
 
 FTS_SCHEMA = """
 CREATE VIRTUAL TABLE IF NOT EXISTS papers_fts USING fts5(
@@ -96,6 +112,12 @@ def connect(db_path: Path) -> sqlite3.Connection:
     except sqlite3.OperationalError:
         # FTS5 미지원 빌드에서는 전문 검색 없이 동작
         pass
+    for migration in MIGRATIONS:
+        try:
+            conn.execute(migration)
+        except sqlite3.OperationalError:
+            pass  # 이미 적용됨
+    conn.commit()
     return conn
 
 

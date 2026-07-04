@@ -1,0 +1,57 @@
+name: Update data (Phase 2 collectors)
+
+# 최신 스냅샷 아티팩트에 arXiv/HF/GitHub 수집분을 증분 반영해 다시 올린다.
+# 매일 03:00 UTC 자동 실행. 이 워크플로 파일이 변경돼도 실행된다(검증용).
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/update-data.yml"
+      - "pwc/collectors/**"
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install -e ".[stream,web,dev]"
+
+      - name: Download latest data snapshot artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          id=$(gh api "repos/${{ github.repository }}/actions/artifacts?name=pwc-sqlite&per_page=1" \
+               --jq '.artifacts[0].id')
+          echo "artifact id: $id"
+          gh api "repos/${{ github.repository }}/actions/artifacts/$id/zip" > snapshot.zip
+          mkdir -p data && unzip -o snapshot.zip -d data && rm snapshot.zip
+
+      - name: Collect new data (arXiv, HF Papers, GitHub links)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python -m pwc collect --data-dir data
+
+      - name: Show stats
+        run: python -m pwc stats --data-dir data
+
+      - name: Upload refreshed snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: pwc-sqlite
+          path: data/pwc.sqlite
+          retention-days: 30
+
+      - name: Smoke check against refreshed data
+        run: PWC_DB=data/pwc.sqlite python scripts/smoke_check.py

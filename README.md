@@ -67,6 +67,23 @@ PWC_DB=data/pwc.sqlite uvicorn app.main:app   # http://127.0.0.1:8000
 | `/methods`, `/method/{slug}` | 방법론 카탈로그 |
 | `/trends` | 프레임워크 점유율 추이 |
 
+### 신규 데이터 수집 (Phase 2 — 현대화)
+
+2025-07 스냅샷 이후의 공백은 수집기가 채웁니다. `Update data` 워크플로가 매일
+03:00 UTC에 최신 스냅샷 아티팩트에 증분 반영합니다.
+
+```bash
+python -m pwc collect                      # arXiv + HF Daily Papers + GitHub 링크
+python -m pwc collect --source arxiv       # 특정 소스만
+GITHUB_TOKEN=... python -m pwc collect --source github   # 코드 링크/스타 수집
+```
+
+- **arXiv**: cs.LG/CV/CL/AI/NE/RO, stat.ML 최신 논문 (`source='arxiv'`)
+- **HF Daily Papers**: 신규 논문 + 업보트 신호 (`signals.hf_upvotes`)
+- **GitHub**: 신규 논문의 코드 저장소 매칭 + 스타 신호 (`signals.github_stars`)
+- 아카이브 데이터가 항상 우선하며(arxiv_id 기준 중복 제외), 홈 Trending은
+  업보트·스타·구현 수 신호 순으로 정렬됩니다.
+
 ### 테스트
 
 ```bash

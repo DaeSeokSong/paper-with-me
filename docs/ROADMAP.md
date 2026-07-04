@@ -22,10 +22,12 @@
 
 목표: 2025-07 스냅샷 이후의 공백을 채우고, 죽은 아카이브가 아닌 살아있는 서비스로 만든다.
 
-- [ ] 신규 논문 수집 — arXiv API (cs.LG, cs.CV, cs.CL 등)
-- [ ] 논문-코드 링크 갱신 — arXiv ↔ GitHub 매칭 (README 인용, paperswithcode 배지, HF model card 링크)
-- [ ] Hugging Face Papers / Daily Papers 연동
-- [ ] GitHub 스타/활성도 반영한 구현체 랭킹
+- [x] 신규 논문 수집 — arXiv API (cs.LG/CV/CL/AI/NE/RO, stat.ML), source 컬럼으로 구분
+- [x] 논문-코드 링크 1차 — GitHub 저장소 검색(arXiv ID 언급) 기반 매칭
+- [x] Hugging Face Daily Papers 연동 — 신규 논문 + 업보트 신호
+- [x] 인기 신호 반영 트렌딩 — signals(업보트·스타) 기반 홈 Trending 정렬
+- [x] 일일 갱신 워크플로 — update-data (스냅샷 아티팩트 증분 갱신, 03:00 UTC)
+- [ ] 논문-코드 링크 고도화 — README 인용·HF model card 링크 매칭
 - [ ] 리더보드 갱신 워크플로 — 커뮤니티 기여(PR) 기반 + 반자동 추출
 - [ ] UI 리뉴얼 — 반응형, 다크 모드, 한국어/영어
 

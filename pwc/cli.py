@@ -71,15 +71,43 @@ def _remove(path: Path) -> None:
         path.unlink()
 
 
+def cmd_collect(args: argparse.Namespace) -> int:
+    """Phase 2 수집기 실행 — 아카이브 스냅샷 이후의 신규 데이터를 채운다."""
+    import os
+
+    from .collectors import arxiv, github_links, hf_papers
+
+    conn = db.connect(args.data_dir / "pwc.sqlite")
+    failures = 0
+    for source in args.source:
+        try:
+            if source == "arxiv":
+                arxiv.collect(conn, max_results=args.max_results)
+            elif source == "hf":
+                hf_papers.collect(conn)
+            elif source == "github":
+                github_links.collect(conn, token=os.environ.get("GITHUB_TOKEN"),
+                                     max_papers=args.max_papers)
+        except Exception as e:  # noqa: BLE001 - 소스별 독립 실행
+            print(f"[{source}] 수집 실패: {e}", file=sys.stderr)
+            failures += 1
+    conn.close()
+    return 1 if failures == len(args.source) else 0
+
+
 def cmd_stats(args: argparse.Namespace) -> int:
     db_path = args.data_dir / "pwc.sqlite"
     if not db_path.exists():
         print(f"DB가 없습니다: {db_path}", file=sys.stderr)
         return 1
     conn = db.connect(db_path)
-    for table in ("papers", "repos", "datasets", "methods", "sota_rows"):
+    for table in ("papers", "repos", "datasets", "methods", "sota_rows", "signals"):
         n = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
         print(f"{table:>10}: {n:,}")
+    fresh = conn.execute(
+        "SELECT COUNT(*) FROM papers WHERE source != 'archive'"
+    ).fetchone()[0]
+    print(f"{'신규 논문':>9}: {fresh:,} (아카이브 이후 수집분)")
     print(f"{'fts':>10}: {'사용 가능' if db.has_fts(conn) else '미지원'}")
     conn.close()
     return 0
@@ -97,6 +125,7 @@ def main(argv: list[str] | None = None) -> int:
         ("download", "아카이브 덤프 다운로드", cmd_download, True),
         ("ingest", "덤프를 SQLite로 적재", cmd_ingest, True),
         ("build", "download + ingest", cmd_build, True),
+        ("collect", "신규 데이터 수집 (arXiv/HF/GitHub)", cmd_collect, False),
         ("stats", "적재 결과 요약", cmd_stats, False),
     ]
     for name, help_text, func, has_only in commands:
@@ -107,6 +136,15 @@ def main(argv: list[str] | None = None) -> int:
                        help="데이터 디렉터리 (기본값: ./data)")
         if has_only:
             p.add_argument("--only", **only_kwargs)
+        if name == "collect":
+            p.add_argument("--source", nargs="*",
+                           choices=["arxiv", "hf", "github"],
+                           default=["arxiv", "hf", "github"],
+                           help="실행할 수집기 (기본: 전체)")
+            p.add_argument("--max-results", type=int, default=500,
+                           help="arXiv 최대 수집 편수")
+            p.add_argument("--max-papers", type=int, default=25,
+                           help="GitHub 링크 검색 대상 논문 수")
         p.set_defaults(func=func)
 
     args = parser.parse_args(argv)

@@ -4,6 +4,9 @@
     {{ p.date or "" }}{% if p.proceeding %} · {{ p.proceeding }}{% endif %}
     {% if p.authors %} · {{ p.authors[:4] | join(", ") }}{% if p.authors | length > 4 %} 외{% endif %}{% endif %}
     {% if p.repo_count %} · 구현 {{ p.repo_count }}개{% endif %}
+    {% if p.hf_upvotes %} · ▲ {{ p.hf_upvotes }}{% endif %}
+    {% if p.github_stars %} · ★ {{ "{:,}".format(p.github_stars) }}{% endif %}
+    {% if p.source and p.source != 'archive' %}<span class="badge">{{ p.source }}</span>{% endif %}
   </div>
   {% if p.abstract %}<p class="muted">{{ p.abstract[:220] }}{% if p.abstract | length > 220 %}…{% endif %}</p>{% endif %}
   {% for t in p.tasks %}<a class="badge" href="/task/{{ t | slugify }}">{{ t }}</a>{% endfor %}

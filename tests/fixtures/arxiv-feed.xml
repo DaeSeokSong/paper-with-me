@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>ArXiv Query Results</title>
+  <entry>
+    <id>http://arxiv.org/abs/2507.11111v1</id>
+    <title>Scaling  Laws for
+     Restored Leaderboards</title>
+    <summary>We study scaling laws
+      in restored benchmark systems.</summary>
+    <published>2026-07-01T17:00:00Z</published>
+    <author><name>Alice Kim</name></author>
+    <author><name>Bob Lee</name></author>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/1706.03762v7</id>
+    <title>Attention Is All You Need</title>
+    <summary>Duplicate of an archived paper; must be skipped.</summary>
+    <published>2017-06-12T00:00:00Z</published>
+    <author><name>Ashish Vaswani</name></author>
+  </entry>
+</feed>

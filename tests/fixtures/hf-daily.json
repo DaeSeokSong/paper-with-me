@@ -1,0 +1,22 @@
+[
+  {
+    "paper": {
+      "id": "2507.22222",
+      "title": "Diffusion Models Strike Back",
+      "summary": "A new diffusion architecture.",
+      "upvotes": 42,
+      "publishedAt": "2026-07-02T00:00:00.000Z",
+      "authors": [{"name": "Carol Park"}]
+    }
+  },
+  {
+    "paper": {
+      "id": "2507.11111",
+      "title": "Scaling Laws for Restored Leaderboards",
+      "summary": "Same paper as the arXiv fixture; only signals should update.",
+      "upvotes": 7,
+      "publishedAt": "2026-07-01T00:00:00.000Z",
+      "authors": [{"name": "Alice Kim"}]
+    }
+  }
+]
