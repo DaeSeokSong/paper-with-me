@@ -11,6 +11,7 @@ import re
 import sqlite3
 from collections import Counter
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 from pwc import db as pwc_db
 from pwc.ingest import strip_nulls
@@ -38,7 +39,17 @@ def _loads(row: dict, *keys: str) -> dict:
 
 
 def paper_slug(paper_url: str | None) -> str:
-    return (paper_url or "").rstrip("/").rsplit("/", 1)[-1]
+    """논문 URL → /paper/{slug} 링크용 slug.
+
+    canonical URL은 마지막 경로 조각이지만, 리더보드(sota_rows)는
+    OpenReview처럼 쿼리스트링에 식별자가 있는 URL(forum?id=X)도 참조한다 —
+    마지막 경로 조각을 그대로 쓰면 'forum?id=X' 같은 깨진 링크가 된다.
+    """
+    parts = urlsplit(paper_url or "")
+    ids = parse_qs(parts.query).get("id")
+    if ids and ids[0]:
+        return ids[0]
+    return parts.path.rstrip("/").rsplit("/", 1)[-1]
 
 
 def _db_key(conn) -> tuple:
@@ -108,16 +119,26 @@ def get_paper(conn, slug: str) -> dict | None:
     if not SLUG_RE.fullmatch(slug):
         return None
     # ① 정규 paper_url PK ② arXiv URL(리더보드가 arxiv.org 링크로 참조하는
-    # 논문 — url_abs 인덱스) ③ LIKE 폴백(예외 레코드, 최후 수단) 순서.
+    # 논문 — url_abs 인덱스, 버전 접미 v N 은 떼고도 시도) ③ LIKE 폴백
+    # (OpenReview forum?id= 등 예외 레코드, 최후 수단) 순서.
+    arxiv_ids = [slug]
+    m = re.fullmatch(r"(\d{4}\.\d{4,5})v\d+", slug)
+    if m:
+        arxiv_ids.append(m.group(1))
+    arxiv_urls = [f"{scheme}://arxiv.org/abs/{i}"
+                  for i in arxiv_ids for scheme in ("https", "http")]
+    esc = _like(slug)
     row = conn.execute(
         "SELECT * FROM papers WHERE paper_url = ?",
         (f"https://paperswithcode.com/paper/{slug}",),
     ).fetchone() or conn.execute(
-        "SELECT * FROM papers WHERE url_abs IN (?, ?) LIMIT 1",
-        (f"https://arxiv.org/abs/{slug}", f"http://arxiv.org/abs/{slug}"),
+        "SELECT * FROM papers WHERE url_abs IN "
+        f"({','.join('?' * len(arxiv_urls))}) LIMIT 1",
+        arxiv_urls,
     ).fetchone() or conn.execute(
-        "SELECT * FROM papers WHERE paper_url LIKE ? ESCAPE '\\' LIMIT 1",
-        (f"%/paper/{_like(slug)}",),
+        "SELECT * FROM papers WHERE paper_url LIKE ? ESCAPE '\\' "
+        "OR url_abs LIKE ? ESCAPE '\\' OR url_abs LIKE ? ESCAPE '\\' LIMIT 1",
+        (f"%/paper/{esc}", f"%={esc}", f"%={esc}&%"),
     ).fetchone()
     return _loads(row, "authors", "tasks", "methods") if row else None
 
@@ -142,14 +163,18 @@ def get_paper_stub(conn, slug: str) -> dict | None:
         )
     ]
     if not rows:
-        # 비정형 URL(도메인·접두 상이)은 접미 일치로 최후 수단 조회
+        # 비정형 URL(도메인·접두 상이, OpenReview forum?id= 형)은
+        # 접미/쿼리 파라미터 일치로 최후 수단 조회
+        esc = _like(slug)
         rows = [
             _loads(r, "metrics", "code_links")
             for r in conn.execute(
                 """SELECT * FROM sota_rows
                    WHERE paper_url LIKE ? ESCAPE '\\'
+                      OR paper_url LIKE ? ESCAPE '\\'
+                      OR paper_url LIKE ? ESCAPE '\\'
                    ORDER BY id LIMIT 200""",
-                (f"%/{_like(slug)}",),
+                (f"%/{esc}", f"%={esc}", f"%={esc}&%"),
             )
         ]
     if not rows:

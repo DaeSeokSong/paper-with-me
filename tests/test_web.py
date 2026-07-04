@@ -130,6 +130,45 @@ def test_paper_resolves_arxiv_url_references(tmp_path):
     assert "초록" in r.text  # 스텁 안내
 
 
+def test_paper_resolves_openreview_url_references(tmp_path):
+    """OpenReview URL(forum?id=X) 참조는 마지막 경로 조각이 'forum?id=X'가
+    되어 깨진 링크를 만들었다 — 쿼리 파라미터 id를 slug로 쓰고, 조회도
+    paper_url의 =id 접미 일치로 해석한다 (실데이터 스모크에서 발견된 회귀)."""
+    import json as _json
+
+    from app import queries
+    from pwc import db as pwc_db
+
+    assert queries.paper_slug("https://openreview.net/forum?id=Jw34v_84m2b") \
+        == "Jw34v_84m2b"
+    assert queries.paper_slug(
+        "https://openreview.net/forum?id=Jw34v_84m2b&noteId=x") == "Jw34v_84m2b"
+    assert queries.paper_slug("https://paperswithcode.com/paper/foo-bar/") \
+        == "foo-bar"
+
+    db_path = tmp_path / "openreview.sqlite"
+    conn = pwc_db.connect(db_path)
+    conn.execute(
+        "INSERT INTO sota_rows (task,parent_task,dataset,model_name,metrics,"
+        "paper_url,paper_title,paper_date,code_links) VALUES (?,?,?,?,?,?,?,?,?)",
+        ("Image Classification", None, "CIFAR-100", "ReviewNet",
+         _json.dumps({"Percentage correct": "95.00"}),
+         "https://openreview.net/forum?id=Jw34v_84m2b",
+         "OpenReview Paper", "2023-01-01", "[]"),
+    )
+    conn.commit()
+    conn.close()
+    c = TestClient(create_app(db_path))
+
+    board = c.get("/sota/image-classification/cifar-100")
+    assert 'href="/paper/Jw34v_84m2b"' in board.text
+    assert "forum?id=" not in board.text  # 깨진 slug가 렌더링되지 않음
+
+    r = c.get("/paper/Jw34v_84m2b")
+    assert r.status_code == 200
+    assert "OpenReview Paper" in r.text
+
+
 def test_board_caps_code_links(tmp_path):
     import json as _json
 

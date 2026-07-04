@@ -163,12 +163,49 @@ def wait_for_space(api, space_repo: str, timeout: int = 1800) -> bool:
                     body = resp.read(4096).decode(errors="replace")
                 if resp.status == 200 and "paper-with-me" in body:
                     print(f"[deploy] 서비스 응답 OK: {url}", flush=True)
-                    return True
+                    return live_check(url)
             except Exception as e:  # noqa: BLE001 - 기동 직후 일시 오류 허용
                 print(f"[deploy] 응답 대기 중: {e}", flush=True)
         time.sleep(30)
     print("[deploy] 대기 시간 초과")
     return False
+
+
+def live_check(base: str) -> bool:
+    """배포 직후 라이브에서 핵심 사용자 동선을 확인한다.
+
+    사용자가 실제로 겪은 장애(리더보드 → 논문 링크 404)가 배포 게이트를
+    통과한 적이 있어, 홈 200 확인만으로는 부족하다 — 라이브 리더보드의
+    ground truth 수치와, 렌더링된 논문 링크 전수가 열리는지 본다.
+    """
+    import re
+
+    board_url = base.rstrip("/") + "/sota/image-classification/cifar-100"
+    try:
+        with urllib.request.urlopen(board_url, timeout=60) as resp:
+            html = resp.read().decode(errors="replace")
+    except Exception as e:  # noqa: BLE001
+        print(f"[deploy] 라이브 리더보드 조회 실패: {e}")
+        return False
+    if "96.08" not in html:
+        print("[deploy] 라이브 리더보드에 ground truth(96.08)가 없습니다")
+        return False
+    broken = []
+    for href in sorted(set(re.findall(r'href="(/paper/[^"]+)"', html))):
+        try:
+            with urllib.request.urlopen(base.rstrip("/") + href,
+                                        timeout=60) as resp:
+                if resp.status != 200:
+                    broken.append(f"{href} → {resp.status}")
+        except Exception as e:  # noqa: BLE001 - HTTPError(404 등) 포함
+            broken.append(f"{href} → {e}")
+    if broken:
+        print(f"[deploy] 라이브 논문 링크 {len(broken)}건 깨짐:")
+        for b in broken:
+            print(f"  {b}")
+        return False
+    print("[deploy] 라이브 점검 OK: 리더보드 수치·논문 링크 전수 연결")
+    return True
 
 
 if __name__ == "__main__":
