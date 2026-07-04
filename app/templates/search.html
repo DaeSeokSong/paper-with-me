@@ -3,7 +3,26 @@
 {% block content %}
 <h1>검색{% if q %}: “{{ q }}”{% endif %}</h1>
 {% if not q %}<p class="muted">검색어를 입력하세요. 논문 제목과 초록에서 찾습니다.</p>{% endif %}
-{% for p in papers %}{% include "_paper_card.html" %}{% else %}{% if q %}<p>결과가 없습니다.</p>{% endif %}{% endfor %}
+{% if missing %}
+<p class="muted">요청하신 {{ "task 리더보드" if missing == "task" else "방법론
+페이지" }}는 아카이브 데이터에 없어 논문 검색으로 안내했습니다.</p>
+{% endif %}
+{% if matches and (matches.tasks or matches.datasets or matches.methods) %}
+<div class="card">
+  {% if matches.tasks %}<div>벤치마크:
+    {% for t in matches.tasks %}<a class="badge" href="{{ t.url }}">{{ t.name }}</a>{% endfor %}
+  </div>{% endif %}
+  {% if matches.datasets %}<div>데이터셋:
+    {% for d in matches.datasets %}<a class="badge" href="{{ d.url }}">{{ d.name }}</a>{% endfor %}
+  </div>{% endif %}
+  {% if matches.methods %}<div>방법론:
+    {% for m in matches.methods %}<a class="badge" href="{{ m.url }}">{{ m.name }}</a>{% endfor %}
+  </div>{% endif %}
+</div>
+{% endif %}
+{% for p in papers %}{% include "_paper_card.html" %}{% else %}{% if q %}<p>논문 결과가 없습니다.
+<a href="/datasets?q={{ q | urlencode }}">데이터셋에서 찾기</a> ·
+<a href="/methods?q={{ q | urlencode }}">방법론에서 찾기</a></p>{% endif %}{% endfor %}
 <div class="pager">
   {% if page > 1 %}<a href="/search?q={{ q | urlencode }}&page={{ page - 1 }}">← 이전</a>{% endif %}
   {% if papers | length == PAGE_SIZE %}<a href="/search?q={{ q | urlencode }}&page={{ page + 1 }}">다음 →</a>{% endif %}

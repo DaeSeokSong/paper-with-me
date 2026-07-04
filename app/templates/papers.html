@@ -2,9 +2,11 @@
 {% block title %}Papers · paper-with-me{% endblock %}
 {% block content %}
 <h1>Papers</h1>
-{% for p in papers %}{% include "_paper_card.html" %}{% else %}<p>결과가 없습니다.</p>{% endfor %}
+{% for p in papers %}{% include "_paper_card.html" %}{% else %}
+<p>이 페이지에는 결과가 없습니다. <a href="/papers">1페이지로 →</a></p>{% endfor %}
 <div class="pager">
   {% if page > 1 %}<a href="/papers?page={{ page - 1 }}">← 이전</a>{% endif %}
-  {% if papers | length == PAGE_SIZE %}<a href="/papers?page={{ page + 1 }}">다음 →</a>{% endif %}
+  {% if papers %}<span class="muted">{{ (page - 1) * PAGE_SIZE + 1 }}–{{ (page - 1) * PAGE_SIZE + papers | length }}{% if total %} / {{ "{:,}".format(total) }}{% endif %}</span>{% endif %}
+  {% if (page * PAGE_SIZE) < (total or 0) %}<a href="/papers?page={{ page + 1 }}">다음 →</a>{% endif %}
 </div>
 {% endblock %}

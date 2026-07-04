@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% block title %}{{ paper.title }} · paper-with-me{% endblock %}
 {% block content %}
-<h1>{{ paper.title }}</h1>
+<p class="muted"><a href="/">홈</a> › <a href="/papers">Papers</a></p>
+<h1 lang="en">{{ paper.title }}</h1>
 <div class="muted paper-meta">
   {{ paper.date or "" }}{% if paper.proceeding %} · {{ paper.proceeding }}{% endif %}
   {% if paper.authors %} · {{ paper.authors | join(", ") }}{% endif %}
@@ -9,15 +10,21 @@
 </div>
 
 {% if paper.abstract %}
-<p class="abstract">{{ paper.abstract }}</p>
+<p class="abstract" lang="en">{{ paper.abstract }}</p>
 {% elif paper.stub %}
 <p class="muted">이 논문의 초록은 아카이브 스냅샷(papers 덤프)에 포함되어 있지
-않습니다. 아래의 원문·코드 링크를 이용하세요.</p>
+않습니다.{% if paper.url_pdf or paper.url_abs or repos %} 아래의 원문·코드
+링크를 이용하세요.{% else %} 아래 외부 검색으로 원문을 찾아보세요.{% endif %}</p>
 {% endif %}
 
 <div class="btn-row">
   {% if paper.url_pdf %}<a class="btn" href="{{ paper.url_pdf }}">📄 PDF</a>{% endif %}
   {% if paper.url_abs %}<a class="btn" href="{{ paper.url_abs }}">Abstract</a>{% endif %}
+  {% if not paper.url_pdf and not paper.url_abs %}
+  {# 원문 링크가 없는 스텁도 막다른 길이 되지 않도록 외부 검색 제공 #}
+  <a class="btn" rel="noopener"
+     href="https://scholar.google.com/scholar?q={{ paper.title | urlencode }}">🔎 Google Scholar</a>
+  {% endif %}
   {% if paper.arxiv_id %}<span class="muted">arXiv:{{ paper.arxiv_id }}</span>{% endif %}
 </div>
 
@@ -34,7 +41,14 @@
 
 {% if paper.tasks %}
 <h2>Tasks</h2>
-{% for t in paper.tasks %}<a class="badge" href="/task/{{ t | slugify }}">{{ t }}</a>{% endfor %}
+{% for t in paper.tasks %}
+  {%- if linkable_tasks and t in linkable_tasks -%}
+    <a class="badge" href="/task/{{ t | slugify }}">{{ t }}</a>
+  {%- else -%}
+    {#- 리더보드가 없는 task는 링크 대신 라벨 — 빈 검색으로 보내지 않는다 -#}
+    <span class="badge">{{ t }}</span>
+  {%- endif -%}
+{% endfor %}
 {% endif %}
 
 {% if results %}

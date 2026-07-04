@@ -16,8 +16,9 @@
 {% for b in boards %}
 <div class="card">
   {# 이 데이터셋의 해당 task 리더보드로 직행 — task 페이지에서 데이터셋을
-     다시 고르게 하지 않는다 (사용성 베타 테스트 지적) #}
-  <a href="/sota/{{ b.slug }}/{{ dataset.name | slugify }}">{{ b.task }} on {{ dataset.name }}</a>
+     다시 고르게 하지 않는다 (사용성 베타 테스트 지적). 표기 변형
+     (variants)의 벤치마크는 해당 변형 slug로 연결한다. #}
+  <a lang="en" href="/sota/{{ b.slug }}/{{ b.dataset_slug }}">{{ b.task }} on {{ b.dataset }}</a>
   <span class="muted">결과 {{ b.n_rows }}개</span>
 </div>
 {% endfor %}

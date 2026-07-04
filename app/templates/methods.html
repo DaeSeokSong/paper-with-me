@@ -3,12 +3,13 @@
 {% block content %}
 <h1>Methods</h1>
 <form action="/methods" method="get">
-  <input type="search" name="q" placeholder="방법론 검색…" value="{{ q }}">
+  <input type="search" name="q" placeholder="방법론 검색…"
+         aria-label="방법론 검색" value="{{ q }}">
 </form>
 <div class="grid">
   {% for m in methods %}
   <div class="card">
-    <h3><a href="/method/{{ m.url | paper_slug if m.url else m.name | slugify }}">{{ m.name }}</a></h3>
+    <h2 lang="en"><a href="/method/{{ m.url | paper_slug if m.url else m.name | slugify }}">{{ m.name }}</a></h2>
     {% if m.full_name and m.full_name != m.name %}<div class="muted">{{ m.full_name }}</div>{% endif %}
     <div class="muted">
       {% if m.introduced_year %}{{ m.introduced_year }}년{% endif %}

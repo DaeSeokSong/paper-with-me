@@ -10,9 +10,9 @@
   <div class="grid">
     {% for t in (g.tasks if expanded else g.tasks[:15]) %}
     <div class="card">
-      <h3><a href="/sota/{{ t.slug }}">{{ t.task }}</a></h3>
+      <h2 lang="en"><a href="/sota/{{ t.slug }}">{{ t.task }}</a></h2>
       <div class="muted">
-        {{ t.n_datasets }} benchmarks · {{ t.n_papers }} papers with code
+        벤치마크 {{ t.n_datasets }}개 · 논문 {{ t.n_papers }}편
         {% if t.parent_task %} · 상위: {{ t.parent_task }}{% endif %}
       </div>
     </div>

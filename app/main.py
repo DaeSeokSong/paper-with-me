@@ -96,38 +96,51 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):
         c = conn()
-        return render(request, "index.html",
-                      trending=queries.trending_papers(c),
-                      latest=queries.latest_papers(c),
-                      stats=queries.stats(c))
+        trending = queries.trending_papers(c)
+        seen = {p["paper_url"] for p in trending}
+        # 같은 논문이 Trending과 Latest에 겹쳐 보이지 않도록 한다
+        latest = [p for p in queries.latest_papers(c)
+                  if p["paper_url"] not in seen]
+        return render(request, "index.html", trending=trending,
+                      latest=latest, stats=queries.stats(c))
 
     @app.get("/search", response_class=HTMLResponse)
-    def search(request: Request, q: str = "", page: Page = 1):
+    def search(request: Request, q: str = "", page: Page = 1,
+               missing: str = ""):
         c = conn()
         papers = queries.search_papers(c, q, page) if q else []
         return render(request, "search.html", q=q, paper_q=q, page=page,
-                      papers=papers)
+                      papers=papers, missing=missing,
+                      matches=queries.search_matches(c, q) if q else None)
 
     @app.get("/paper/{slug}", response_class=HTMLResponse)
     def paper(request: Request, slug: str):
         c = conn()
         p = queries.get_paper(c, slug)
-        if p:
-            return render(request, "paper.html", paper=p,
-                          repos=queries.paper_repos(c, p["paper_url"]),
-                          results=queries.paper_results(c, p["paper_url"]))
-        # papers 덤프에 없어도 리더보드가 참조하는 논문이면 스텁 페이지 제공
-        stub = queries.get_paper_stub(c, slug)
-        if not stub:
-            raise HTTPException(404, "논문을 찾을 수 없습니다")
-        return render(request, "paper.html", paper=stub,
-                      repos=stub["repos"], results=stub["results"])
+        if not p:
+            # papers 덤프에 없어도 리더보드가 참조하는 논문이면 스텁 제공
+            p = queries.get_paper_stub(c, slug)
+            if not p:
+                raise HTTPException(404, "논문을 찾을 수 없습니다")
+        # 리더보드가 있는 task만 배지를 링크로 — 없는 task 배지가 빈
+        # 검색으로 떨어지는 죽은 길을 만들지 않는다
+        linkable = {t for t in p["tasks"]
+                    if queries.find_task(c, queries.slugify(t))}
+        return render(request, "paper.html", paper=p,
+                      linkable_tasks=linkable,
+                      repos=(p.get("repos")
+                             if p.get("stub")
+                             else queries.paper_repos(c, p["paper_url"])),
+                      results=(p.get("results")
+                               if p.get("stub")
+                               else queries.paper_results(c, p["paper_url"])))
 
     @app.get("/papers", response_class=HTMLResponse)
     def papers(request: Request, page: Page = 1):
         c = conn()
         return render(request, "papers.html", page=page,
-                      papers=queries.latest_papers(c, page))
+                      papers=queries.latest_papers(c, page),
+                      total=queries.total_papers(c))
 
     @app.get("/sota", response_class=HTMLResponse)
     def sota(request: Request, area: str = ""):
@@ -137,11 +150,12 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             areas = [g for g in areas if g["area"] == area] or areas
         return render(request, "sota.html", areas=areas, expanded=bool(area))
 
-    def _search_fallback(slug: str) -> RedirectResponse:
+    def _search_fallback(slug: str, kind: str = "task") -> RedirectResponse:
         # 논문 메타데이터의 task/method가 리더보드·카탈로그에 없는 경우가
         # 많다(아카이브 특성). 죽은 404 대신 검색으로 안내한다.
         q = urllib.parse.quote(slug.replace("-", " "))
-        return RedirectResponse(f"/search?q={q}", status_code=302)
+        return RedirectResponse(f"/search?q={q}&missing={kind}",
+                                status_code=302)
 
     @app.get("/sota/{task_slug}", response_class=HTMLResponse)
     def sota_task(request: Request, task_slug: str):
@@ -178,10 +192,17 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             board["metric_names"][0] if board["metric_names"] else None)
         total = len(board["rows"])
         offset = (page - 1) * per
+        ranks = queries.board_ranks(
+            board["rows"],
+            board["metric_names"][0] if board["metric_names"] else None)
         return render(request, "board.html", task=task, task_slug=task_slug,
                       board=board, chart=chart, total=total, offset=offset,
                       rows=board["rows"][offset:offset + per],
-                      page=page, per=per)
+                      ranks=ranks[offset:offset + per],
+                      page=page, per=per,
+                      dataset_slug=dataset_slug,
+                      dataset_in_catalog=bool(
+                          queries.get_dataset(c, dataset_slug)))
 
     @app.get("/datasets", response_class=HTMLResponse)
     def datasets(request: Request, q: str = "", page: Page = 1):
@@ -196,7 +217,8 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         if not d:
             raise HTTPException(404, "데이터셋을 찾을 수 없습니다")
         return render(request, "dataset.html", dataset=d,
-                      boards=queries.dataset_leaderboards(c, d["name"]))
+                      boards=queries.dataset_leaderboards(
+                          c, d["name"], d.get("variants")))
 
     @app.get("/methods", response_class=HTMLResponse)
     def methods(request: Request, q: str = "", page: Page = 1):
@@ -209,7 +231,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         c = conn()
         m = queries.get_method(c, slug)
         if not m:
-            return _search_fallback(slug)
+            return _search_fallback(slug, kind="method")
         return render(request, "method.html", method=m)
 
     @app.get("/trends", response_class=HTMLResponse)

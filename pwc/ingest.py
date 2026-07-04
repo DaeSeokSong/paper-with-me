@@ -209,8 +209,8 @@ def ingest_links(conn: sqlite3.Connection, path: Path) -> int:
 def ingest_datasets(conn: sqlite3.Connection, path: Path) -> int:
     sql = """INSERT OR REPLACE INTO datasets
              (url, name, full_name, homepage, description, paper_url,
-              modalities, languages, num_papers)
-             VALUES (?,?,?,?,?,?,?,?,?)"""
+              modalities, languages, num_papers, variants)
+             VALUES (?,?,?,?,?,?,?,?,?,?)"""
     rows = (
         (
             r.get("url") or r.get("name"),
@@ -222,6 +222,8 @@ def ingest_datasets(conn: sqlite3.Connection, path: Path) -> int:
             _dumps(_nested(r.get("modalities"))),
             _dumps(_nested(r.get("languages"))),
             r.get("num_papers"),
+            # 리더보드 dataset 문자열과 카탈로그명을 잇는 표기 변형
+            _dumps(_nested(r.get("variants"))),
         )
         for r in iter_records(path)
     )
@@ -262,8 +264,8 @@ def ingest_evaluations(conn: sqlite3.Connection, path: Path) -> int:
     sql = """INSERT INTO sota_rows
              (task, parent_task, dataset, model_name, metrics,
               paper_url, paper_title, paper_date, code_links, metrics_order,
-              area)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?)"""
+              area, uses_additional_data)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"""
     conn.execute("DELETE FROM sota_rows")
 
     def flatten(task_obj: dict, parent: str | None,
@@ -290,6 +292,8 @@ def ingest_evaluations(conn: sqlite3.Connection, path: Path) -> int:
                     _dumps(_nested(row.get("code_links"))),
                     metrics_order,
                     area,
+                    # 원본 리더보드의 Extra Training Data 체크 컬럼
+                    _to_int(row.get("uses_additional_data")),
                 )
         for sub in _nested(task_obj.get("subtasks")) or []:
             yield from flatten(sub, task_name, area)

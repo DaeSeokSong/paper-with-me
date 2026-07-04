@@ -1,5 +1,5 @@
 <div class="card">
-  <h3><a href="/paper/{{ p.paper_url | paper_slug }}">{{ p.title }}</a></h3>
+  <h2 lang="en"><a href="/paper/{{ p.paper_url | paper_slug }}">{{ p.title }}</a></h2>
   <div class="muted">
     {{ p.date or "" }}{% if p.proceeding %} · {{ p.proceeding }}{% endif %}
     {% if p.authors %} · {{ p.authors[:4] | join(", ") }}{% if p.authors | length > 4 %} 외{% endif %}{% endif %}

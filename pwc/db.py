@@ -115,6 +115,11 @@ MIGRATIONS = [
     "ALTER TABLE sota_rows ADD COLUMN area TEXT",
     # 리더보드가 arXiv URL로 참조하는 논문을 papers에서 찾기 위한 인덱스
     "CREATE INDEX IF NOT EXISTS idx_papers_url_abs ON papers(url_abs)",
+    # 원본 리더보드의 Extra Training Data 컬럼 (사전학습 데이터 사용 여부)
+    "ALTER TABLE sota_rows ADD COLUMN uses_additional_data INTEGER",
+    # 데이터셋 표기 변형(예: 'CIFAR-10, 4000 Labels') — 카탈로그명과
+    # 리더보드 dataset 문자열을 잇는 데 필요
+    "ALTER TABLE datasets ADD COLUMN variants TEXT",
 ]
 
 FTS_SCHEMA = """

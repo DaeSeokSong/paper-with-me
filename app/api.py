@@ -40,11 +40,17 @@ def build_router(get_conn) -> APIRouter:
     def paper(slug: str):
         c = get_conn()
         p = queries.get_paper(c, slug)
-        if not p:
+        if p:
+            p["repositories"] = queries.paper_repos(c, p["paper_url"])
+            p["results"] = queries.paper_results(c, p["paper_url"])
+            return p
+        # HTML과 동일하게 리더보드 참조 논문은 스텁으로 응답 — 리더보드
+        # API가 돌려준 paper_url 기반 slug가 API에서만 404 나지 않도록
+        stub = queries.get_paper_stub(c, slug)
+        if not stub:
             raise HTTPException(404, "paper not found")
-        p["repositories"] = queries.paper_repos(c, p["paper_url"])
-        p["results"] = queries.paper_results(c, p["paper_url"])
-        return p
+        stub["repositories"] = stub.pop("repos")
+        return stub
 
     @router.get("/search", summary="논문 검색 (제목·초록)")
     def search(q: str, page: Page = 1):

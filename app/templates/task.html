@@ -6,9 +6,11 @@
 <div class="grid">
   {% for b in benchmarks %}
   <div class="card">
-    <h3><a href="/sota/{{ task_slug }}/{{ b.slug }}">{{ b.dataset }}</a></h3>
+    <h2 lang="en"><a href="/sota/{{ task_slug }}/{{ b.slug }}">{{ b.dataset }}</a></h2>
     <div class="muted">결과 {{ b.n_rows }}개</div>
   </div>
-  {% else %}<p>벤치마크가 없습니다.</p>{% endfor %}
+  {% else %}<p>벤치마크가 없습니다.
+    <a href="/sota">전체 task 목록으로</a> ·
+    <a href="/search?q={{ task | urlencode }}">“{{ task }}” 논문 검색</a></p>{% endfor %}
 </div>
 {% endblock %}

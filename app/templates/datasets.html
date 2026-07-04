@@ -3,12 +3,13 @@
 {% block content %}
 <h1>Datasets</h1>
 <form action="/datasets" method="get">
-  <input type="search" name="q" placeholder="데이터셋 검색…" value="{{ q }}">
+  <input type="search" name="q" placeholder="데이터셋 검색…"
+         aria-label="데이터셋 검색" value="{{ q }}">
 </form>
 <div class="grid">
   {% for d in datasets %}
   <div class="card">
-    <h3><a href="/dataset/{{ d.name | slugify }}">{{ d.name }}</a></h3>
+    <h2 lang="en"><a href="/dataset/{{ d.name | slugify }}">{{ d.name }}</a></h2>
     {% if d.full_name and d.full_name != d.name %}<div class="muted">{{ d.full_name }}</div>{% endif %}
     <div class="muted">{% if d.num_papers %}논문 {{ "{:,}".format(d.num_papers) }}편{% endif %}</div>
     {% for m in d.modalities %}<span class="badge">{{ m }}</span>{% endfor %}

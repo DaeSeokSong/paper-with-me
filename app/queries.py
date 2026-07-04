@@ -74,6 +74,21 @@ def _like(term: str) -> str:
 
 # ---------------------------------------------------------------- papers
 
+_total_cache: dict[tuple, int] = {}
+
+
+def total_papers(conn) -> int:
+    """date가 있는 논문 총수 — /papers 페이저의 "n–m / 전체" 표시용.
+    576k 행 COUNT는 요청마다 돌리기엔 아깝고 스냅샷 단위로 불변이라 캐시."""
+    key = _db_key(conn)
+    if key not in _total_cache:
+        _total_cache.clear()
+        _total_cache[key] = conn.execute(
+            "SELECT COUNT(*) FROM papers WHERE date IS NOT NULL"
+        ).fetchone()[0]
+    return _total_cache[key]
+
+
 def latest_papers(conn, page: int = 1) -> list[dict]:
     rows = conn.execute(
         "SELECT * FROM papers WHERE date IS NOT NULL ORDER BY date DESC "
@@ -218,11 +233,13 @@ def get_paper_stub(conn, slug: str) -> dict | None:
             if link and link not in repos:
                 repos[link] = {"repo_url": link, "is_official": None,
                                "framework": None, "stars": None}
+    # 리더보드 행들의 task를 모아 일반 논문 페이지와 같은 탐색 허브를 만든다
+    tasks = list(dict.fromkeys(r["task"] for r in rows if r.get("task")))
     return {
         "paper_url": url,
         "title": rows[0].get("paper_title") or slug.replace("-", " "),
         "date": rows[0].get("paper_date"),
-        "abstract": None, "authors": [], "tasks": [], "methods": [],
+        "abstract": None, "authors": [], "tasks": tasks, "methods": [],
         "arxiv_id": None, "url_abs": None, "url_pdf": None,
         "proceeding": None, "source": "archive", "stub": True,
         "repos": list(repos.values()), "results": rows,
@@ -269,6 +286,31 @@ def search_papers(conn, q: str, page: int = 1) -> list[dict]:
     return [_loads(r, "authors", "tasks", "methods") for r in rows]
 
 
+def search_matches(conn, q: str, cap: int = 5) -> dict:
+    """통합 검색 보조: 질의가 task/데이터셋/방법론 이름과 겹치면 함께 안내.
+
+    캐시된 slug 맵만 훑으므로 스캔 비용이 없다 (검색이 논문 전용이라
+    'imagenet' 검색이 0건으로 끝나던 사용성 문제 보완).
+    """
+    qs = slugify(q)
+    if not qs:
+        return {"tasks": [], "datasets": [], "methods": []}
+    out: dict[str, list[dict]] = {}
+    for kind, sql, prefix in (
+        ("tasks", "SELECT DISTINCT task FROM sota_rows WHERE task IS NOT NULL",
+         "/sota/"),
+        ("datasets", "SELECT name FROM datasets", "/dataset/"),
+        ("methods", "SELECT name FROM methods", "/method/"),
+    ):
+        m = _slug_map(conn, kind.rstrip("s"), sql)
+        hits = [{"name": name, "url": prefix + slug}
+                for slug, name in m.items() if qs in slug]
+        # 짧은 slug(정확 일치에 가까운 것) 우선
+        hits.sort(key=lambda h: len(h["name"]))
+        out[kind] = hits[:cap]
+    return out
+
+
 def _fts_query(q: str) -> str:
     # 사용자 입력을 FTS 구문이 아닌 단순 단어 AND 매치로 취급한다.
     # 마지막 단어는 prefix 매치 — 타이핑 중 검색·한글 어절 앞부분 대응
@@ -293,10 +335,33 @@ def sota_tasks(conn) -> list[dict]:
     return [dict(r) | {"slug": slugify(r["task"])} for r in rows]
 
 
+def board_ranks(rows: list[dict], metric: str | None) -> list[int]:
+    """리더보드 순위 — 주 지표가 같은 연속 행은 공동 순위(competition
+    ranking). 행 순서는 원본 덤프 순서를 유지하고 번호만 계산한다
+    (동점인데 1·2위로 갈려 금·은이 나뉘는 문제 방지)."""
+    ranks: list[int] = []
+    prev_val: float | None = None
+    for i, r in enumerate(rows):
+        val = None
+        if metric and isinstance(r.get("metrics"), dict):
+            try:
+                val = float(str(r["metrics"].get(metric, "")
+                                ).replace("%", "").replace(",", "").strip())
+            except ValueError:
+                val = None
+        if ranks and val is not None and val == prev_val:
+            ranks.append(ranks[-1])  # 공동 순위
+        else:
+            ranks.append(i + 1)
+        prev_val = val
+    return ranks
+
+
 def sota_areas(conn) -> list[dict]:
     """원본 /sota 처럼 분야(area)별로 task를 그룹핑한다. area 정보가 없는
-    구 스냅샷에서는 단일 그룹으로 폴백한다."""
-    tasks = sota_tasks(conn)
+    구 스냅샷에서는 단일 그룹으로 폴백한다. 벤치마크가 0개인 task는
+    카드가 죽은 길이 되므로 제외한다."""
+    tasks = [t for t in sota_tasks(conn) if t["n_datasets"] > 0]
     groups: dict[str, list[dict]] = {}
     for t in tasks:
         groups.setdefault(t["area"] or "Miscellaneous", []).append(t)
@@ -447,17 +512,25 @@ def get_dataset(conn, slug: str) -> dict | None:
     row = conn.execute(
         "SELECT * FROM datasets WHERE name = ?", (name,)
     ).fetchone()
-    return _loads(row, "modalities", "languages") if row else None
+    return _loads(row, "modalities", "languages", "variants") if row else None
 
 
-def dataset_leaderboards(conn, dataset_name: str) -> list[dict]:
+def dataset_leaderboards(conn, dataset_name: str,
+                         variants: list | None = None) -> list[dict]:
+    """데이터셋의 벤치마크 목록. 카탈로그명과 리더보드의 dataset 문자열이
+    다른 경우(예: 'MS COCO' vs 'COCO test-dev')가 흔해 variants까지
+    매칭한다 — 안 그러면 데이터셋 페이지가 조용히 빈 껍데기가 된다."""
+    names = [dataset_name] + [v for v in (variants or [])
+                              if isinstance(v, str) and v]
     rows = conn.execute(
-        """SELECT task, COUNT(*) AS n_rows FROM sota_rows
-           WHERE dataset = ? AND task IS NOT NULL
-           GROUP BY task ORDER BY n_rows DESC""",
-        (dataset_name,),
+        f"""SELECT task, dataset, COUNT(*) AS n_rows FROM sota_rows
+            WHERE dataset IN ({','.join('?' * len(names))})
+              AND task IS NOT NULL
+            GROUP BY task, dataset ORDER BY n_rows DESC""",
+        names,
     ).fetchall()
-    return [dict(r) | {"slug": slugify(r["task"])} for r in rows]
+    return [dict(r) | {"slug": slugify(r["task"]),
+                       "dataset_slug": slugify(r["dataset"])} for r in rows]
 
 
 def list_methods(conn, q: str = "", page: int = 1) -> list[dict]:
