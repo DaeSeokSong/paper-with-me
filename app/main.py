@@ -20,7 +20,8 @@ from typing import Annotated
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
+                               RedirectResponse)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -76,6 +77,12 @@ def create_app(db_path: Path | None = None) -> FastAPI:
                        allow_methods=["GET"], allow_headers=["*"])
     app.include_router(build_router(conn))
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+    # 서비스워커는 파일 경로가 스코프 상한이므로 루트에서 서빙한다
+    @app.get("/sw.js", include_in_schema=False)
+    def service_worker():
+        return FileResponse(STATIC_DIR / "sw.js",
+                            media_type="application/javascript")
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):

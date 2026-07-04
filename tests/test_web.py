@@ -208,6 +208,13 @@ def test_methods(client):
     assert "attention mechanism" in r.text
 
 
+def test_pwa_assets(client):
+    assert client.get("/sw.js").status_code == 200
+    assert "serviceWorker" in client.get("/").text
+    assert client.get("/static/manifest.webmanifest").status_code == 200
+    assert client.get("/static/offline.html").status_code == 200
+
+
 def test_trends(client):
     r = client.get("/trends")
     assert r.status_code == 200

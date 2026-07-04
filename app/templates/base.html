@@ -120,6 +120,12 @@
   </form>
 </div></header>
 <main>{% block content %}{% endblock %}</main>
+<script>
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js")
+    .catch(function () {/* 미지원/비보안 컨텍스트는 무시 */});
+}
+</script>
 <footer>
   Papers with Code 복원 프로젝트 (비공식, Meta와 무관) ·
   <a href="https://github.com/DaeSeokSong/paper-with-me">소스 코드</a> (AGPL-3.0) ·
