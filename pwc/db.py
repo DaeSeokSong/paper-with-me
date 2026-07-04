@@ -113,6 +113,8 @@ MIGRATIONS = [
     "ALTER TABLE papers ADD COLUMN updated TEXT",
     # 원본 /sota의 분야(area)별 그룹핑용 — evaluation-tables의 categories
     "ALTER TABLE sota_rows ADD COLUMN area TEXT",
+    # 리더보드가 arXiv URL로 참조하는 논문을 papers에서 찾기 위한 인덱스
+    "CREATE INDEX IF NOT EXISTS idx_papers_url_abs ON papers(url_abs)",
 ]
 
 FTS_SCHEMA = """

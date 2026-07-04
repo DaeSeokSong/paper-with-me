@@ -133,19 +133,43 @@ def main() -> int:
     check("404가 HTML 에러 페이지로 렌더링",
           r.status_code == 404 and "<html" in r.text)
 
-    # 리더보드 → 논문 페이지 연결 무결성 (papers 덤프에 없는 논문은 스텁으로)
-    sample = conn.execute(
-        """SELECT s.paper_url FROM sota_rows s
-           WHERE s.paper_url LIKE 'https://paperswithcode.com/paper/%'
-           ORDER BY s.id LIMIT 5"""
-    ).fetchall()
+    # 진단: 리더보드가 참조하는 paper_url 형태 분포 (canonical 외 형태 파악)
+    print("  (진단) sota_rows.paper_url 접두 분포:")
+    for row in conn.execute(
+        """SELECT substr(paper_url, 1, 40) AS prefix, COUNT(*) AS n
+           FROM sota_rows WHERE paper_url IS NOT NULL
+           GROUP BY prefix ORDER BY n DESC LIMIT 10"""
+    ):
+        print(f"    {row['n']:>8,}  {row['prefix']}")
+
+    # 리더보드 → 논문 페이지 연결 무결성: DB 샘플링이 아니라 실제 렌더링된
+    # 페이지의 href를 전수 GET한다. 과거 canonical URL만 샘플링하는 게이트가
+    # arXiv-URL 참조 논문의 404(EffNet-L2(SAM) 등)를 놓친 회귀 방지.
+    import re as _re
     linked_ok = True
-    for row in sample:
-        slug = row["paper_url"].rstrip("/").rsplit("/", 1)[-1]
-        if timed_get(client, f"/paper/{slug}").status_code != 200:
+    for board in ("/sota/image-classification/cifar-100",
+                  "/sota/image-classification/imagenet"):
+        page = timed_get(client, board)
+        hrefs = sorted(set(_re.findall(r'href="(/paper/[^"]+)"', page.text)))
+        if not hrefs:
             linked_ok = False
-            print(f"  깨진 논문 링크: /paper/{slug}")
-    check("리더보드 논문 링크 연결 (스텁 폴백 포함)", linked_ok)
+            print(f"  {board}: 논문 링크가 하나도 없음")
+        for href in hrefs:
+            code = timed_get(client, href).status_code
+            if code != 200:
+                linked_ok = False
+                print(f"  깨진 논문 링크: {href} → {code} (출처 {board})")
+    check("리더보드 렌더링 논문 링크 전수 연결 (스텁 폴백 포함)", linked_ok)
+
+    # 사용자 실보고 케이스: CIFAR-100 1위 EffNet-L2(SAM)의 논문 링크
+    r = get("/sota/image-classification/cifar-100")
+    m = _re.search(r'<a href="(/paper/[^"]+)"[^>]*>[^<]*SAM', r.text)
+    if m:
+        pr = timed_get(client, m.group(1))
+        check("SAM 논문 페이지 직접 확인",
+              pr.status_code == 200 and "Sharpness" in pr.text, m.group(1))
+    else:
+        check("SAM 논문 페이지 직접 확인", False, "SAM 행의 논문 링크를 찾지 못함")
 
     missing = conn.execute(
         """SELECT COUNT(DISTINCT s.paper_url) FROM sota_rows s

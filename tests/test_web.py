@@ -73,6 +73,63 @@ def test_paper_stub_for_leaderboard_only_papers(tmp_path):
     assert "초록" in r.text  # 초록 부재 안내
 
 
+def test_paper_resolves_arxiv_url_references(tmp_path):
+    """리더보드가 arXiv URL로 참조하는 논문(slug에 점 포함, 예: 2010.01412)도
+    404 없이 열린다 — 라이브에서 EffNet-L2(SAM) 링크가 깨졌던 회귀 방지.
+
+    ① papers에 url_abs가 일치하는 논문이 있으면 완전한 논문 페이지,
+    ② 없으면 sota_rows 기반 스텁 페이지.
+    """
+    import json as _json
+
+    from pwc import db as pwc_db
+    db_path = tmp_path / "arxiv.sqlite"
+    conn = pwc_db.connect(db_path)
+    # ① papers 덤프에 있는 논문 (url_abs 매칭)
+    conn.execute(
+        "INSERT INTO papers (paper_url,title,abstract,url_abs,date) "
+        "VALUES (?,?,?,?,?)",
+        ("https://paperswithcode.com/paper/sharpness-aware-minimization",
+         "Sharpness-Aware Minimization for Efficiently Improving Generalization",
+         "In today's heavily overparameterized models...",
+         "https://arxiv.org/abs/2010.01412", "2020-10-03"),
+    )
+    conn.execute(
+        "INSERT INTO sota_rows (task,parent_task,dataset,model_name,metrics,"
+        "paper_url,paper_title,paper_date,code_links) VALUES (?,?,?,?,?,?,?,?,?)",
+        ("Image Classification", None, "CIFAR-100", "EffNet-L2 (SAM)",
+         _json.dumps({"Percentage correct": "96.08"}),
+         "https://arxiv.org/abs/2010.01412",
+         "Sharpness-Aware Minimization", "2020-10-03", "[]"),
+    )
+    # ② papers에 전혀 없는 arXiv-URL 참조 (스텁 폴백)
+    conn.execute(
+        "INSERT INTO sota_rows (task,parent_task,dataset,model_name,metrics,"
+        "paper_url,paper_title,paper_date,code_links) VALUES (?,?,?,?,?,?,?,?,?)",
+        ("Image Classification", None, "CIFAR-100", "OrphanNet",
+         _json.dumps({"Percentage correct": "90.00"}),
+         "http://arxiv.org/abs/1234.56789", "Orphan Paper", "2019-01-01", "[]"),
+    )
+    conn.commit()
+    conn.close()
+    c = TestClient(create_app(db_path))
+
+    # 리더보드가 렌더링하는 링크 형태 그대로 조회 (점 포함 slug)
+    board = c.get("/sota/image-classification/cifar-100")
+    assert board.status_code == 200
+    assert 'href="/paper/2010.01412"' in board.text
+
+    r = c.get("/paper/2010.01412")
+    assert r.status_code == 200
+    assert "Sharpness-Aware Minimization" in r.text
+    assert "overparameterized" in r.text  # 초록까지 있는 완전한 페이지
+
+    r = c.get("/paper/1234.56789")
+    assert r.status_code == 200
+    assert "Orphan Paper" in r.text
+    assert "초록" in r.text  # 스텁 안내
+
+
 def test_board_caps_code_links(tmp_path):
     import json as _json
 
@@ -207,6 +264,16 @@ def test_methods(client):
     r = client.get("/method/transformer")
     assert r.status_code == 200
     assert "attention mechanism" in r.text
+
+
+def test_theme_defaults_to_original_light(client):
+    """원본 paperswithcode.com에는 다크 모드가 없었다 — 기본은 라이트 테마,
+    다크는 헤더 토글(localStorage)로만 켠다. OS 다크 설정 자동 추종 금지."""
+    html = client.get("/").text
+    assert "prefers-color-scheme" not in html  # OS 설정 자동 추종 제거
+    assert 'data-theme="dark"' in html  # 토글 대상 셀렉터/스크립트 존재
+    assert 'id="theme-toggle"' in html
+    assert "localStorage" in html
 
 
 def test_pwa_assets(client):

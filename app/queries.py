@@ -99,15 +99,22 @@ def trending_papers(conn, limit: int = 10) -> list[dict]:
     return papers[:limit]
 
 
+SLUG_RE = re.compile(r"[A-Za-z0-9._-]{1,200}")
+
+
 def get_paper(conn, slug: str) -> dict | None:
-    # 정규 slug만 허용 — 와일드카드 주입과 무의미한 풀스캔을 차단한다
-    if not re.fullmatch(r"[a-z0-9-]{1,200}", slug):
+    # slug 형식 제한 — 와일드카드 주입과 무의미한 풀스캔을 차단한다.
+    # 점(.)은 arXiv ID형 slug(예: 2010.01412) 때문에 허용한다.
+    if not SLUG_RE.fullmatch(slug):
         return None
-    # 아카이브의 paper_url은 정규 형태라 PK 조회가 먼저 적중한다.
-    # LIKE 폴백은 접두사가 다른 예외 레코드용 (576k 행 풀스캔이므로 최후 수단).
+    # ① 정규 paper_url PK ② arXiv URL(리더보드가 arxiv.org 링크로 참조하는
+    # 논문 — url_abs 인덱스) ③ LIKE 폴백(예외 레코드, 최후 수단) 순서.
     row = conn.execute(
         "SELECT * FROM papers WHERE paper_url = ?",
         (f"https://paperswithcode.com/paper/{slug}",),
+    ).fetchone() or conn.execute(
+        "SELECT * FROM papers WHERE url_abs IN (?, ?) LIMIT 1",
+        (f"https://arxiv.org/abs/{slug}", f"http://arxiv.org/abs/{slug}"),
     ).fetchone() or conn.execute(
         "SELECT * FROM papers WHERE paper_url LIKE ? ESCAPE '\\' LIMIT 1",
         (f"%/paper/{_like(slug)}",),
@@ -122,15 +129,29 @@ def get_paper_stub(conn, slug: str) -> dict | None:
     참조한다 — 리더보드에서 클릭한 논문이 404로 끊기지 않도록, 리더보드
     데이터로 초록 없는 전용 페이지를 구성한다.
     """
-    if not re.fullmatch(r"[a-z0-9-]{1,200}", slug):
+    if not SLUG_RE.fullmatch(slug):
         return None
     url = f"https://paperswithcode.com/paper/{slug}"
     rows = [
         _loads(r, "metrics", "code_links")
         for r in conn.execute(
-            "SELECT * FROM sota_rows WHERE paper_url = ? ORDER BY id", (url,)
+            """SELECT * FROM sota_rows
+               WHERE paper_url IN (?, ?, ?) ORDER BY id""",
+            (url, f"https://arxiv.org/abs/{slug}",
+             f"http://arxiv.org/abs/{slug}"),
         )
     ]
+    if not rows:
+        # 비정형 URL(도메인·접두 상이)은 접미 일치로 최후 수단 조회
+        rows = [
+            _loads(r, "metrics", "code_links")
+            for r in conn.execute(
+                """SELECT * FROM sota_rows
+                   WHERE paper_url LIKE ? ESCAPE '\\'
+                   ORDER BY id LIMIT 200""",
+                (f"%/{_like(slug)}",),
+            )
+        ]
     if not rows:
         return None
     repos: dict[str, dict] = {}
