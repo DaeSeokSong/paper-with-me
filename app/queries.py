@@ -573,15 +573,40 @@ def find_task(conn, slug: str) -> str | None:
     ).get(slug)
 
 
-def task_benchmarks(conn, task: str) -> list[dict]:
+_task_variant_maps: dict[tuple, dict[str, list[str]]] = {}
+
+
+def task_variants(conn, slug: str) -> list[str]:
+    """같은 slug로 합쳐지는 task 문자열 변형 전부.
+
+    아카이브에는 'Class Incremental Learning'과 'class-incremental
+    learning'처럼 대소문자·구두점만 다른 task가 공존한다 — 대표 하나만
+    쓰면 변형 쪽에만 있는 벤치마크가 404가 된다 (전수 크롤에서 발견)."""
+    key = _db_key(conn)
+    if key not in _task_variant_maps:
+        m: dict[str, list[str]] = {}
+        for (t,) in conn.execute(
+            "SELECT DISTINCT task FROM sota_rows WHERE task IS NOT NULL"
+        ):
+            m.setdefault(slugify(t), []).append(t)
+        _task_variant_maps.clear()
+        _task_variant_maps[key] = m
+    return _task_variant_maps[key].get(slug, [])
+
+
+def task_benchmarks(conn, task: str,
+                    variants: list | None = None) -> list[dict]:
     """task의 벤치마크(dataset) 목록. 원본 사이트처럼 task 페이지에는
     카드 목록만 보여주고, 표는 dataset별 페이지에서 렌더링한다
-    (대형 task는 dataset이 수천 개라 전체 표를 한 페이지에 담을 수 없다)."""
+    (대형 task는 dataset이 수천 개라 전체 표를 한 페이지에 담을 수 없다).
+    variants가 있으면 같은 slug의 task 표기 변형을 병합한다."""
+    names = list(dict.fromkeys([task] + (variants or [])))
     rows = conn.execute(
-        """SELECT dataset, COUNT(*) AS n_rows FROM sota_rows
-           WHERE task = ? AND dataset IS NOT NULL
-           GROUP BY dataset ORDER BY n_rows DESC""",
-        (task,),
+        f"""SELECT dataset, task, COUNT(*) AS n_rows FROM sota_rows
+            WHERE task IN ({','.join('?' * len(names))})
+              AND dataset IS NOT NULL
+            GROUP BY dataset, task ORDER BY n_rows DESC""",
+        names,
     ).fetchall()
     return [dict(r) | {"slug": slugify(r["dataset"])} for r in rows]
 

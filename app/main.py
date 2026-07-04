@@ -169,8 +169,10 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         task = queries.find_task(c, task_slug)
         if not task:
             return _search_fallback(task_slug)
+        # 같은 slug의 task 표기 변형(대소문자 등)을 병합해 벤치마크 누락 방지
+        variants = queries.task_variants(c, task_slug)
         return render(request, "task.html", task=task, task_slug=task_slug,
-                      benchmarks=queries.task_benchmarks(c, task))
+                      benchmarks=queries.task_benchmarks(c, task, variants))
 
     # 원본 사이트의 /task/{slug} URL 호환 — 중복 콘텐츠를 피하기 위해
     # 정규 URL(/sota/{slug})로 리다이렉트한다
@@ -189,6 +191,16 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         if not task:
             raise HTTPException(404, "task를 찾을 수 없습니다")
         dataset = queries.find_benchmark_dataset(c, task, dataset_slug)
+        if dataset is None:
+            # 대표 task에 없으면 같은 slug의 표기 변형에서 찾는다
+            # (변형 쪽에만 있는 벤치마크가 404 나던 문제 — 크롤 발견)
+            for alt in queries.task_variants(c, task_slug):
+                if alt == task:
+                    continue
+                dataset = queries.find_benchmark_dataset(c, alt, dataset_slug)
+                if dataset is not None:
+                    task = alt
+                    break
         if dataset is None:
             raise HTTPException(404, "벤치마크를 찾을 수 없습니다")
         board = queries.dataset_leaderboard(c, task, dataset)

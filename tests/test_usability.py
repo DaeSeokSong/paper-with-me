@@ -173,6 +173,25 @@ def test_sota_hides_zero_benchmark_tasks(make_client):
     assert "Speech Denoising" not in r.text
 
 
+def test_task_case_variants_are_merged(make_client):
+    """같은 slug의 task 표기 변형('Class Incremental Learning' vs
+    'class-incremental learning')이 공존해도 벤치마크가 404 나지 않는다
+    (3,000페이지 전수 크롤에서 발견된 실데이터 회귀)."""
+    def fill(conn):
+        _sota_row(conn, task="Class Incremental Learning", dataset="DS-A",
+                  model="A")
+        _sota_row(conn, task="class-incremental learning", dataset="DS-B",
+                  model="B")
+    c = make_client(fill)
+    # task 페이지는 두 변형의 벤치마크를 모두 보여준다
+    r = c.get("/sota/class-incremental-learning")
+    assert r.status_code == 200
+    assert "DS-A" in r.text and "DS-B" in r.text
+    # 변형 쪽에만 있는 벤치마크 리더보드도 열린다
+    assert c.get("/sota/class-incremental-learning/ds-a").status_code == 200
+    assert c.get("/sota/class-incremental-learning/ds-b").status_code == 200
+
+
 def test_papers_pager_shows_total_and_empty_state(make_client):
     def fill(conn):
         for i in range(3):
