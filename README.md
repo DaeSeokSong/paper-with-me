@@ -108,6 +108,26 @@ tests/          오프라인 실행 가능한 테스트 (fixtures 포함)
 docs/           로드맵, 아키텍처 문서
 ```
 
+## 공개 API (앱·외부 연동)
+
+모바일 앱과 외부 서비스가 쓸 수 있는 읽기 전용 JSON API입니다 (CORS 전 오리진 허용).
+대화형 문서: **`/docs`** (OpenAPI)
+
+```
+GET /api/v1/stats                              적재 통계
+GET /api/v1/papers?page=                       최신 논문
+GET /api/v1/papers/trending                    트렌딩
+GET /api/v1/papers/{slug}                      논문 상세 (+repositories, +results)
+GET /api/v1/search?q=&page=                    검색
+GET /api/v1/tasks                              task 목록
+GET /api/v1/tasks/{task}                       task의 벤치마크 목록
+GET /api/v1/benchmarks/{task}/{dataset}        리더보드 (원본 순서)
+GET /api/v1/datasets[/{slug}] · /api/v1/methods[/{slug}] · /api/v1/trends
+```
+
+웹은 PWA를 지원합니다 (manifest + 아이콘) — 모바일 브라우저에서 "홈 화면에 추가"로
+설치형 앱처럼 쓸 수 있습니다.
+
 ## 배포 (Phase 3)
 
 **GitHub = 코드·CI·데이터 빌드, Hugging Face = 데이터 저장 + 서비스** 구조입니다.

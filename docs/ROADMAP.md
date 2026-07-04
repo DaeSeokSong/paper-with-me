@@ -31,12 +31,21 @@
       치명·높음·중간 등급 일괄 수정 (FTS 동기화, 데이터 소실 체인 이관,
       리더보드 원본 순서 보존, LIKE 이스케이프, 배포 원자성 등)
 - [x] UI 리뉴얼 — 반응형, 다크 모드 (한/영 전환은 보류)
-- [ ] 논문-코드 링크 고도화 — HF model card 링크 매칭, 저자-저장소
-      소유자 휴리스틱으로 is_official 추정
-- [ ] arXiv 개정판(v2+) 추적 — lastUpdatedDate 수집 + 기존 논문 메타 갱신
-- [ ] 한글 부분어 검색 — FTS trigram 토크나이저 병용 (재빌드 필요)
+- [x] 논문-코드 링크 고도화 — HF model card(arxiv 필터) 기반 모델 매칭
+      수집기 (`hf-models`)
+- [x] arXiv 개정판(v2+) 추적 — lastUpdatedDate 수집 + 수집 논문 메타 갱신
+- [x] 한글·부분어 검색 — 신규 빌드부터 FTS trigram 토크나이저
+- [ ] is_official 추정 휴리스틱 (저자-저장소 소유자 매칭)
 - [ ] 리더보드 갱신 워크플로 — 커뮤니티 기여(PR) 기반 + 반자동 추출
 - [ ] UI 한국어/영어 전환
+
+## Phase 4 — 앱 (App)
+
+- [x] 공개 JSON API v1 (`/api/v1/*`, OpenAPI 문서, CORS) — 앱 백엔드
+- [x] PWA 기반 (manifest, 아이콘, theme-color) — 홈 화면 설치 지원
+- [ ] 서비스워커 오프라인 셸 + 홈 화면 설치 유도
+- [ ] 네이티브/크로스플랫폼 앱 (React Native/Flutter, API v1 사용)
+- [ ] 앱 전용 기능 — 북마크, 새 논문 알림(푸시)
 
 ## Phase 3 — 배포 (Deploy)
 

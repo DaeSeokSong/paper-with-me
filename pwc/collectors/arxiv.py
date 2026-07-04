@@ -22,10 +22,14 @@ def slugify(name: str) -> str:
 
 
 def fetch_recent(max_results: int = 500) -> list[dict]:
-    """최신 제출순으로 ML 카테고리 논문을 가져온다."""
+    """ML 카테고리 논문을 최근 갱신순으로 가져온다.
+
+    submittedDate 정렬은 개정판(v2+)이 수집 창에 들어오지 않는다 —
+    lastUpdatedDate 정렬이 신규 제출과 개정을 모두 커버한다.
+    """
     query = " OR ".join(f"cat:{c}" for c in CATEGORIES)
     url = (f"{API}?search_query={urllib.parse.quote(query)}"
-           f"&sortBy=submittedDate&sortOrder=descending"
+           f"&sortBy=lastUpdatedDate&sortOrder=descending"
            f"&start=0&max_results={max_results}")
     req = urllib.request.Request(url, headers={"User-Agent": "paper-with-me/0.1"})
     with urllib.request.urlopen(req, timeout=120) as resp:
@@ -55,6 +59,7 @@ def parse_feed(data: bytes) -> list[dict]:
                 if a.findtext(f"{ATOM}name")
             ],
             "date": published,
+            "updated": (entry.findtext(f"{ATOM}updated") or "")[:10] or None,
             "url_abs": f"https://arxiv.org/abs/{arxiv_id}",
             "url_pdf": f"https://arxiv.org/pdf/{arxiv_id}",
         })
@@ -74,7 +79,17 @@ def upsert_papers(conn: sqlite3.Connection, papers: Iterable[dict],
     }
     inserted = 0
     for p in papers:
-        if not p.get("arxiv_id") or p["arxiv_id"] in existing:
+        if not p.get("arxiv_id"):
+            continue
+        if p["arxiv_id"] in existing:
+            # 개정판(v2+) 반영 — 수집 논문에 한해 제목/초록을 갱신한다
+            # (아카이브 레코드는 원본 보존 우선)
+            conn.execute(
+                """UPDATE papers SET title = ?, abstract = ?, updated = ?
+                   WHERE arxiv_id = ? AND source != 'archive'""",
+                (p.get("title"), p.get("abstract"), p.get("updated"),
+                 p["arxiv_id"]),
+            )
             continue
         slug = slugify(p["title"])
         if not slug:
@@ -86,8 +101,8 @@ def upsert_papers(conn: sqlite3.Connection, papers: Iterable[dict],
         cur = conn.execute(
             """INSERT OR IGNORE INTO papers
                (paper_url, arxiv_id, title, abstract, url_abs, url_pdf,
-                proceeding, date, authors, tasks, methods, source)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                proceeding, date, updated, authors, tasks, methods, source)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 PAPER_URL_PREFIX + slug,
                 p["arxiv_id"],
@@ -97,6 +112,7 @@ def upsert_papers(conn: sqlite3.Connection, papers: Iterable[dict],
                 p.get("url_pdf"),
                 None,
                 p.get("date"),
+                p.get("updated"),
                 json.dumps(p.get("authors") or [], ensure_ascii=False),
                 json.dumps(p.get("tasks") or [], ensure_ascii=False),
                 "[]",

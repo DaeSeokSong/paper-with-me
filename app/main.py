@@ -19,10 +19,15 @@ from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from . import queries
+from .api import build_router
+
+STATIC_DIR = Path(__file__).parent / "static"
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
@@ -45,9 +50,13 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     def render(request: Request, template: str, **ctx) -> HTMLResponse:
         return templates.TemplateResponse(request, template, ctx)
 
-    # 브라우저 사용자가 raw JSON 에러를 보지 않도록 HTML 에러 페이지를 렌더링
+    # 브라우저 사용자가 raw JSON 에러를 보지 않도록 HTML 에러 페이지를
+    # 렌더링한다. 단, API 경로는 클라이언트(앱)가 파싱할 JSON을 유지한다.
     @app.exception_handler(HTTPException)
     async def http_error(request: Request, exc: HTTPException):
+        if request.url.path.startswith("/api/"):
+            return JSONResponse({"detail": exc.detail},
+                                status_code=exc.status_code)
         return templates.TemplateResponse(
             request, "error.html",
             {"status_code": exc.status_code, "detail": exc.detail},
@@ -55,10 +64,18 @@ def create_app(db_path: Path | None = None) -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError):
+        if request.url.path.startswith("/api/"):
+            return JSONResponse({"detail": exc.errors()}, status_code=422)
         return templates.TemplateResponse(
             request, "error.html",
             {"status_code": 400, "detail": "잘못된 요청 파라미터입니다"},
             status_code=400)
+
+    # 모바일 앱·외부 연동용 공개 API (읽기 전용이라 전 오리진 허용)
+    app.add_middleware(CORSMiddleware, allow_origins=["*"],
+                       allow_methods=["GET"], allow_headers=["*"])
+    app.include_router(build_router(conn))
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
     @app.get("/", response_class=HTMLResponse)
     def index(request: Request):

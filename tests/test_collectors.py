@@ -103,6 +103,76 @@ def test_github_language_not_stored_as_framework(conn):
     assert all(r["language"] is None for r in repos)
 
 
+def test_arxiv_revision_updates_collected_papers_only(conn):
+    """개정판(v2+)은 수집 논문의 제목/초록만 갱신하고 아카이브는 보존한다."""
+    papers = arxiv.parse_feed((FIXTURES / "arxiv-feed.xml").read_bytes())
+    arxiv.upsert_papers(conn, papers)
+    revised = [dict(papers[0], title="Scaling Laws v2 Revised",
+                    updated="2026-07-04"),
+               dict(papers[1], title="Attention Revised (should not apply)")]
+    assert arxiv.upsert_papers(conn, revised) == 0  # 신규 삽입 없음
+    row = conn.execute(
+        "SELECT title, updated FROM papers WHERE arxiv_id='2507.11111'"
+    ).fetchone()
+    assert row["title"] == "Scaling Laws v2 Revised"
+    assert row["updated"] == "2026-07-04"
+    # 아카이브 논문은 개정 반영 대상이 아니다
+    archived = conn.execute(
+        "SELECT title FROM papers WHERE arxiv_id='1706.03762'"
+    ).fetchone()
+    assert archived["title"] == "Attention Is All You Need"
+
+
+def test_hf_models_parse_and_apply(conn):
+    from pwc.collectors import hf_models
+
+    papers = hf_papers.parse_daily((FIXTURES / "hf-daily.json").read_bytes())
+    hf_papers.apply(conn, papers)
+    paper_url = conn.execute(
+        "SELECT paper_url FROM papers WHERE arxiv_id='2507.22222'"
+    ).fetchone()[0]
+
+    models = hf_models.parse_models((FIXTURES / "hf-models.json").read_bytes())
+    assert [m["model_id"] for m in models] == [
+        "carolpark/diffusion-strike-back-base", "community/dsb-finetune"]
+    assert hf_models.apply(conn, paper_url, models) == 2
+
+    row = conn.execute(
+        "SELECT repo_url, source, stars FROM repos WHERE source='hf' "
+        "ORDER BY stars DESC"
+    ).fetchone()
+    assert row["repo_url"] == \
+        "https://huggingface.co/carolpark/diffusion-strike-back-base"
+    assert row["stars"] == 128
+
+    # 검색 이력 기록 후 재조회 대상에서 제외
+    conn.execute("INSERT INTO model_search_log (paper_url, searched_at) "
+                 "VALUES (?, '2026-07-04T00:00:00')", (paper_url,))
+    conn.commit()
+    assert paper_url not in [
+        t[0] for t in hf_models.papers_needing_models(conn)]
+
+
+def test_trigram_fts_supports_partial_word_search(conn):
+    """새 빌드의 trigram 토크나이저 — 한글·영문 부분어 검색."""
+    from app import queries
+
+    sql = conn.execute("SELECT sql FROM sqlite_master WHERE name='papers_fts'"
+                       ).fetchone()
+    if not sql or "trigram" not in sql[0]:
+        pytest.skip("trigram 미적용 DB")
+    conn.execute(
+        "INSERT INTO papers (paper_url, title, abstract) VALUES (?,?,?)",
+        ("https://paperswithcode.com/paper/korean-paper",
+         "딥러닝 기반 영상 분류 연구", "한국어 초록"),
+    )
+    conn.commit()
+    assert any("딥러닝" in p["title"]
+               for p in queries.search_papers(conn, "러닝"))  # 부분어
+    assert any("Attention" in p["title"]
+               for p in queries.search_papers(conn, "ttention"))
+
+
 def test_stale_signals_excluded_from_trending(conn):
     from app import queries
 

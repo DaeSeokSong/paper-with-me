@@ -92,6 +92,12 @@ CREATE TABLE IF NOT EXISTS repo_search_log (
     paper_url   TEXT PRIMARY KEY,
     searched_at TEXT
 );
+
+-- HF 모델 검색 이력 (repo_search_log와 동일 목적, 소스 분리)
+CREATE TABLE IF NOT EXISTS model_search_log (
+    paper_url   TEXT PRIMARY KEY,
+    searched_at TEXT
+);
 """
 
 # 기존 스냅샷 DB에도 적용되는 컬럼 추가. ALTER는 IF NOT EXISTS가 없으므로
@@ -103,11 +109,17 @@ MIGRATIONS = [
     # 원본 evaluation-tables의 지표 순서(주 지표가 첫 번째). 리더보드 컬럼
     # 선택이 빈도 추정이 아닌 원본 정보를 쓰도록 보존한다.
     "ALTER TABLE sota_rows ADD COLUMN metrics_order TEXT",
+    # arXiv 개정판 추적 — published(v1)와 별개의 마지막 갱신일
+    "ALTER TABLE papers ADD COLUMN updated TEXT",
 ]
 
 FTS_SCHEMA = """
+-- trigram: 부분 문자열·한글 부분어 검색 지원 (unicode61은 어절 단위만).
+-- 기존 스냅샷의 unicode61 테이블은 IF NOT EXISTS로 유지되고,
+-- 새 빌드부터 trigram이 적용된다. 3자 미만 질의는 0건 → LIKE 폴백.
 CREATE VIRTUAL TABLE IF NOT EXISTS papers_fts USING fts5(
-    title, abstract, content='papers', content_rowid='rowid'
+    title, abstract, content='papers', content_rowid='rowid',
+    tokenize='trigram'
 );
 
 -- 외부 콘텐츠 FTS는 자동 동기화가 없다. 트리거가 없으면 수집기가 나중에

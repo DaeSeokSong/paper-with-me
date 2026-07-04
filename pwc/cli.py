@@ -75,7 +75,7 @@ def cmd_collect(args: argparse.Namespace) -> int:
     """Phase 2 수집기 실행 — 아카이브 스냅샷 이후의 신규 데이터를 채운다."""
     import os
 
-    from .collectors import arxiv, github_links, hf_papers
+    from .collectors import arxiv, github_links, hf_models, hf_papers
 
     conn = db.connect(args.data_dir / "pwc.sqlite")
     failures = 0
@@ -85,6 +85,8 @@ def cmd_collect(args: argparse.Namespace) -> int:
                 arxiv.collect(conn, max_results=args.max_results)
             elif source == "hf":
                 hf_papers.collect(conn)
+            elif source == "hf-models":
+                hf_models.collect(conn, max_papers=args.max_papers)
             elif source == "github":
                 github_links.collect(conn, token=os.environ.get("GITHUB_TOKEN"),
                                      max_papers=args.max_papers)
@@ -142,8 +144,8 @@ def main(argv: list[str] | None = None) -> int:
             p.add_argument("--only", **only_kwargs)
         if name == "collect":
             p.add_argument("--source", nargs="*",
-                           choices=["arxiv", "hf", "github"],
-                           default=["arxiv", "hf", "github"],
+                           choices=["arxiv", "hf", "hf-models", "github"],
+                           default=["arxiv", "hf", "hf-models", "github"],
                            help="실행할 수집기 (기본: 전체)")
             p.add_argument("--max-results", type=int, default=500,
                            help="arXiv 최대 수집 편수")

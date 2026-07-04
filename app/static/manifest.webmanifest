@@ -1,0 +1,18 @@
+{
+  "name": "paper-with-me",
+  "short_name": "paper-with-me",
+  "description": "Papers with Code 복원 — 논문·코드·SOTA 리더보드 탐색",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f1419",
+  "theme_color": "#0f1419",
+  "lang": "ko",
+  "icons": [
+    {
+      "src": "/static/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
