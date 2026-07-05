@@ -102,6 +102,31 @@ def test_ingest_evaluations_strips_parquet_null_unification(conn, tmp_path):
     assert stored == {"Accuracy": "96.08"}  # null 키 제거됨
 
 
+def test_ingest_papers_parquet_date32_column(conn, tmp_path):
+    """parquet 변환본의 date 컬럼은 문자열이 아니라 date32(datetime.date)로
+    온다 — clean_date가 str만 받으면 papers.date 전체가 NULL로 적재되어
+    Trends·Rising Tasks·최신순이 통째로 죽는다 (build-data 스모크 발견)."""
+    import datetime
+
+    records = json.loads((FIXTURES / "papers.json").read_text())
+    table = pa.Table.from_pylist(records)
+    idx = table.column_names.index("date")
+    dates = pa.array(
+        [datetime.date.fromisoformat(str(v)[:10]) for v in table.column("date").to_pylist()],
+        type=pa.date32(),
+    )
+    table = table.set_column(idx, "date", dates)
+    shard_dir = tmp_path / "papers"
+    shard_dir.mkdir()
+    pq.write_table(table, shard_dir / "train-00000-of-00001.parquet")
+
+    assert ingest.ingest_papers(conn, shard_dir) == 2
+    stored = conn.execute(
+        "SELECT date FROM papers WHERE arxiv_id='1706.03762'"
+    ).fetchone()[0]
+    assert stored == "2017-06-12"
+
+
 def test_ingest_links_from_parquet(conn, tmp_path):
     records = json.loads((FIXTURES / "links.json").read_text())
     shard_dir = _write_shards(records, tmp_path / "links", n_shards=1)
