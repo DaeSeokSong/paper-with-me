@@ -17,6 +17,12 @@ permissions:
   contents: read
   actions: read
 
+# 연속 push로 다중 빌드가 겹치면 HF에서 수 GB 덤프를 동시에 받다가
+# 429/5xx로 죽는다 — 직렬화하되 진행 중인 빌드는 낭비하지 않는다
+concurrency:
+  group: build-data
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
