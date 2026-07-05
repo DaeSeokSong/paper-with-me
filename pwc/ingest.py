@@ -123,6 +123,11 @@ def clean_date(value: object) -> str | None:
     아카이브에 '2222-12-22' 같은 행이 실재해 최신순 정렬·날짜 앵커를
     오염시켰다 — 조회 계층의 FUTURE_GUARD는 방어선이고 근본 정화는 여기."""
     import datetime as _dt
+    # parquet 변환본은 date 컬럼을 문자열이 아니라 datetime.date 객체로
+    # 준다 — str만 받으면 papers.date 전체가 NULL로 적재되어 Trends·
+    # Rising Tasks·최신순이 통째로 죽는다 (build-data 스모크에서 발견)
+    if isinstance(value, (_dt.date, _dt.datetime)):
+        value = value.isoformat()[:10]
     if not isinstance(value, str):
         return None
     if len(value) < 10:

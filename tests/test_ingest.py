@@ -80,6 +80,19 @@ def test_ingest_evaluations_cleans_stringified_none(conn, tmp_path):
     assert row == (None, None, None, None)
 
 
+def test_clean_date():
+    import datetime
+
+    assert ingest.clean_date("2017-06-12") == "2017-06-12"
+    assert ingest.clean_date("2017-06") == "2017-06"  # 부분 날짜 유지
+    assert ingest.clean_date(datetime.date(2017, 6, 12)) == "2017-06-12"
+    assert ingest.clean_date(datetime.datetime(2017, 6, 12, 9, 30)) == "2017-06-12"
+    assert ingest.clean_date("None") is None
+    assert ingest.clean_date(None) is None
+    assert ingest.clean_date("2222-12-22") is None  # 오타 미래 연도
+    assert ingest.clean_date("not-a-date") is None
+
+
 def test_ingest_methods_and_datasets(conn):
     assert ingest.ingest_methods(conn, FIXTURES / "methods.json") == 1
     assert ingest.ingest_datasets(conn, FIXTURES / "datasets.json") == 1
