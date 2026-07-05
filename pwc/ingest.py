@@ -123,8 +123,11 @@ def clean_date(value: object) -> str | None:
     아카이브에 '2222-12-22' 같은 행이 실재해 최신순 정렬·날짜 앵커를
     오염시켰다 — 조회 계층의 FUTURE_GUARD는 방어선이고 근본 정화는 여기."""
     import datetime as _dt
-    if not isinstance(value, str) or len(value) < 10:
-        return value if isinstance(value, str) else None
+    if not isinstance(value, str):
+        return None
+    if len(value) < 10:
+        # 부분 날짜("2017-06")는 통과, 문자열 "None" 등 정크는 차단
+        return value if value[:4].isdigit() else None
     try:
         d = _dt.date.fromisoformat(value[:10])
     except ValueError:
@@ -309,10 +312,10 @@ def ingest_evaluations(conn: sqlite3.Connection, path: Path) -> int:
                     task_name,
                     parent,
                     dataset_name,
-                    row.get("model_name"),
+                    _clean_str(row.get("model_name")),
                     _dumps(_nested(row.get("metrics"))),
-                    row.get("paper_url"),
-                    row.get("paper_title"),
+                    _clean_str(row.get("paper_url")),
+                    _clean_str(row.get("paper_title")),
                     clean_date(row.get("paper_date")),
                     _dumps(_nested(row.get("code_links"))),
                     metrics_order,
@@ -351,3 +354,11 @@ def _to_int(value: object) -> int | None:
     if value is None:
         return None
     return int(bool(value))
+
+
+def _clean_str(value: object) -> str | None:
+    """덤프에 결측이 문자열 'None'으로 남은 필드 정화 — NULL 가드와
+    truthiness 폴백을 모두 통과해 화면에 그대로 노출된다."""
+    if value in (None, "", "None"):
+        return None
+    return value

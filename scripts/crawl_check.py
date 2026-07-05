@@ -65,7 +65,11 @@ def crawl(client: TestClient, max_pages: int) -> list[str]:
             continue
         body = r.text
         if ">None<" in body:
-            issues.append(f"{url} → 'None' 값 노출 (출처 {referrer})")
+            # 어느 필드가 새는지 바로 알 수 있도록 주변 HTML을 함께 보고
+            i = body.index(">None<")
+            ctx = " ".join(body[max(0, i - 120):i + 40].split())
+            issues.append(
+                f"{url} → 'None' 값 노출: …{ctx}… (출처 {referrer})")
         if "{{" in body or "{%" in body:
             issues.append(f"{url} → 템플릿 미치환 흔적 (출처 {referrer})")
         hrefs = []

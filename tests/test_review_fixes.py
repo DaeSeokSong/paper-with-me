@@ -143,13 +143,21 @@ def test_string_none_metric_values_scrubbed(tmp_path):
     conn.commit()
     conn.close()
     c = TestClient(create_app(db_path))
-    # model_name이 NULL인 행도 실재한다 — 템플릿이 None을 렌더링하면 안 됨
+    # model_name이 NULL인 행, 그리고 결측이 문자열 "None"으로 남은 행도
+    # 실재한다(덤프 오염) — 후자는 NULL 가드·`or` 폴백을 모두 통과하므로
+    # 읽기 시점 정화가 없으면 표에 'None'이 그대로 노출된다
     conn2 = pwc_db.connect(db_path)
     conn2.execute(
         "INSERT INTO sota_rows (task,dataset,model_name,metrics,paper_url,"
         "code_links) VALUES (?,?,?,?,?,?)",
         ("Visual Place Recognition", "KITTI", None,
          json.dumps({"Recall@1": "88.0"}), "https://x/paper/q", "[]"),
+    )
+    conn2.execute(
+        "INSERT INTO sota_rows (task,dataset,model_name,metrics,paper_url,"
+        "paper_title,code_links) VALUES (?,?,?,?,?,?,?)",
+        ("Visual Place Recognition", "KITTI", "None",
+         json.dumps({"Recall@1": "85.0"}), "https://x/paper/r", "None", "[]"),
     )
     conn2.commit()
     conn2.close()
@@ -160,3 +168,6 @@ def test_string_none_metric_values_scrubbed(tmp_path):
     assert "91.2" in r.text
     assert "AUC" not in r.text  # 값이 전부 정크인 컬럼은 제거
     assert "(모델명 미상)" in r.text
+    # CSV도 같은 정화를 공유한다
+    csv_text = c.get("/sota/visual-place-recognition/kitti.csv").text
+    assert "None" not in csv_text
