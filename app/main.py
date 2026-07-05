@@ -293,10 +293,12 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         return render(request, "method.html", method=m)
 
     @app.get("/digest", response_class=HTMLResponse)
-    def digest(request: Request):
+    def digest(request: Request,
+               year: Annotated[int, Query(ge=1990, le=2100)] | None = None,
+               week: Annotated[int, Query(ge=1, le=53)] | None = None):
         c = conn()
         return render(request, "digest.html",
-                      digest=queries.weekly_digest(c),
+                      digest=queries.weekly_digest(c, year, week),
                       task_slugs=queries.task_slugs(c))
 
     @app.get("/trends", response_class=HTMLResponse)

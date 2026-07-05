@@ -104,3 +104,67 @@ def test_autocomplete_wired_in_header(client):
     html = client.get("/").text
     assert 'id="suggest-box"' in html
     assert "/api/v1/suggest?q=" in html
+
+
+def test_digest_week_navigation(client):
+    """다이제스트 아카이브 — 특정 주차 조회 + 이전/다음 주 링크."""
+    # 기본: 최신 논문(2026-06-30, ISO 27주차)이 속한 주
+    r = client.get("/digest")
+    assert "2026년 27주차" in r.text
+    assert "Good Paper" in r.text
+    assert "이전 주" in r.text
+
+    # 과거 주차 직접 조회 — 빈 주는 안내와 탐색 링크
+    r = client.get("/digest", params={"year": 2026, "week": 20})
+    assert r.status_code == 200
+    assert "2026년 20주차" in r.text
+    assert "이 주에 수집된 논문이 없습니다" in r.text
+    assert "다음 주 →" in r.text  # 앵커 이전 주차라 다음 주 링크 존재
+
+    # 범위 밖 값은 앵커 주로 폴백 (500 금지)
+    assert client.get("/digest", params={"year": 2026, "week": 53}).status_code == 200
+
+
+def test_auto_tagging_collected_papers(tmp_path):
+    """수집 논문(tasks 빈)에 본문 언급 task명을 자동 태깅 —
+    태그 카테고라이징·검색이 수집 논문에도 작동하게 하는 기반."""
+    from pwc.collectors import auto_tag
+
+    conn = pwc_db.connect(tmp_path / "tag.sqlite")
+    for task in ("Image Classification", "Object Detection",
+                 "Few-Shot Image Classification"):
+        conn.execute(
+            "INSERT INTO sota_rows (task,dataset,model_name,metrics,"
+            "code_links) VALUES (?,?,?,?,?)",
+            (task, "DS", "M", "{}", "[]"),
+        )
+    conn.execute(
+        "INSERT INTO papers (paper_url,title,abstract,date,source) "
+        "VALUES (?,?,?,?,?)",
+        ("https://paperswithcode.com/paper/tagme",
+         "Prototype Networks for Few-Shot Image Classification",
+         "We study few-shot image classification and object detection.",
+         "2026-06-01", "arxiv"),
+    )
+    # 아카이브 논문은 손대지 않는다
+    conn.execute(
+        "INSERT INTO papers (paper_url,title,abstract,date,source) "
+        "VALUES (?,?,?,?,'archive')",
+        ("https://paperswithcode.com/paper/archived",
+         "Image Classification Survey", "Survey.", "2020-01-01"),
+    )
+    conn.commit()
+    assert auto_tag.collect(conn) == 1
+    tags = json.loads(conn.execute(
+        "SELECT tasks FROM papers WHERE paper_url LIKE '%tagme'"
+    ).fetchone()[0])
+    # 더 구체적인 이름 우선, 그 부분 문자열("Image Classification")은 제외
+    assert "Few-Shot Image Classification" in tags
+    assert "Object Detection" in tags
+    assert "Image Classification" not in tags
+    assert conn.execute(
+        "SELECT tasks FROM papers WHERE paper_url LIKE '%archived'"
+    ).fetchone()[0] is None
+    # 재실행은 no-op (이미 태깅된 논문 유지)
+    assert auto_tag.collect(conn) == 0
+    conn.close()

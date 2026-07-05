@@ -517,38 +517,45 @@ def methods_glossary(conn, method_names: list) -> list[dict]:
 _digest_cache: dict[tuple, dict] = {}
 
 
-def weekly_digest(conn) -> dict:
-    """최근 논문을 분야(area)별로 묶은 다이제스트 (HF Daily Papers류 수요).
+def _digest_anchor(conn) -> str | None:
+    """다이제스트 기준일 — 미래 오타 날짜를 제외한 가장 최근 논문 날짜."""
+    row = conn.execute(
+        "SELECT MAX(date) FROM papers WHERE date <= date('now', '+1 day')"
+    ).fetchone()
+    return row[0] if row and row[0] else None
 
-    최근 7일에 논문이 적으면 30일로 창을 넓힌다. 분야는 task→area 맵
+
+def weekly_digest(conn, year: int | None = None,
+                  week: int | None = None) -> dict:
+    """ISO 주차 단위 다이제스트 (HF Daily Papers류 수요) + 아카이브 탐색.
+
+    year/week가 없으면 가장 최근 논문이 속한 주. 이전/다음 주로 이동할
+    수 있어 과거 다이제스트도 볼 수 있다. 분야는 task→area 맵
     (sota_rows)으로 정하고, 매핑이 없으면 'General'."""
     import datetime as _dt
-    key = (_db_key(conn), _dt.date.today().isoformat())
+    anchor_s = _digest_anchor(conn)
+    anchor = (_dt.date.fromisoformat(anchor_s[:10])
+              if anchor_s else _dt.date.today())
+    anchor_iso = anchor.isocalendar()
+    if not (year and week):
+        year, week = anchor_iso[0], anchor_iso[1]
+    try:
+        start = _dt.date.fromisocalendar(year, week, 1)
+    except ValueError:
+        year, week = anchor_iso[0], anchor_iso[1]
+        start = _dt.date.fromisocalendar(year, week, 1)
+    end = start + _dt.timedelta(days=6)
+    key = (_db_key(conn), year, week)
     if key in _digest_cache:
         return _digest_cache[key]
-    days = 7
     rows = conn.execute(
         """SELECT p.*, s.hf_upvotes, s.github_stars,
                   (SELECT COUNT(*) FROM repos r WHERE r.paper_url = p.paper_url)
                   AS repo_count
            FROM papers p LEFT JOIN signals s ON s.paper_url = p.paper_url
-           WHERE p.date >= date((SELECT MAX(date) FROM papers
-                                 WHERE date <= date('now', '+1 day')),
-                                '-7 days')
-             AND p.date <= date('now', '+1 day')"""
+           WHERE p.date >= ? AND p.date <= ?""",
+        (start.isoformat(), end.isoformat() + "~"),  # '~' > '9': 시각 접미 포함
     ).fetchall()
-    if len(rows) < 30:
-        days = 30
-        rows = conn.execute(
-            """SELECT p.*, s.hf_upvotes, s.github_stars,
-                      (SELECT COUNT(*) FROM repos r
-                       WHERE r.paper_url = p.paper_url) AS repo_count
-               FROM papers p LEFT JOIN signals s ON s.paper_url = p.paper_url
-               WHERE p.date >= date((SELECT MAX(date) FROM papers
-                                     WHERE date <= date('now', '+1 day')),
-                                    '-30 days')
-                 AND p.date <= date('now', '+1 day')"""
-        ).fetchall()
     papers = [_loads(r, "authors", "tasks", "methods") for r in rows]
     papers.sort(key=lambda p: ((p.get("hf_upvotes") or 0) * 10
                                + (p.get("github_stars") or 0) / 10
@@ -562,11 +569,20 @@ def weekly_digest(conn) -> dict:
         area = next((area_of[t] for t in p["tasks"] if t in area_of), None)
         groups.setdefault(area or "General", []).append(p)
     ordered = sorted(groups.items(), key=lambda kv: -len(kv[1]))
-    out = {"days": days,
+    prev_iso = (start - _dt.timedelta(days=7)).isocalendar()
+    next_start = start + _dt.timedelta(days=7)
+    has_next = next_start <= anchor
+    out = {"year": year, "week": week,
+           "start": start.isoformat(), "end": end.isoformat(),
            "total": len(papers),
+           "prev": {"year": prev_iso[0], "week": prev_iso[1]},
+           "next": ({"year": next_start.isocalendar()[0],
+                     "week": next_start.isocalendar()[1]}
+                    if has_next else None),
            "groups": [{"area": a, "papers": ps[:8], "total": len(ps)}
                       for a, ps in ordered]}
-    _digest_cache.clear()
+    if len(_digest_cache) > 60:  # 주차 탐색으로 무한 증식 방지
+        _digest_cache.clear()
     _digest_cache[key] = out
     return out
 

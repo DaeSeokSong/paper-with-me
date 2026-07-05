@@ -1,13 +1,25 @@
 {% extends "base.html" %}
-{% block title %}Weekly Digest · paper-with-me{% endblock %}
+{% block title %}{{ digest.year }}년 {{ digest.week }}주차 Digest · paper-with-me{% endblock %}
 {% block content %}
-<h1>Weekly Digest</h1>
-<p class="muted">최근 {{ digest.days }}일 신규 논문 {{ "{:,}".format(digest.total) }}편을
-분야별로 묶었습니다. 정렬: 인기 신호(HF 업보트·GitHub 스타·구현 수).</p>
+<h1>Weekly Digest <span class="muted">{{ digest.year }}년 {{ digest.week }}주차</span></h1>
+<p class="muted">{{ digest.start }} ~ {{ digest.end }} 신규 논문
+{{ "{:,}".format(digest.total) }}편을 분야별로 묶었습니다.
+정렬: 인기 신호(HF 업보트·GitHub 스타·구현 수).</p>
+
+<div class="pager">
+  <a href="/digest?year={{ digest.prev.year }}&week={{ digest.prev.week }}">← 이전 주</a>
+  <span class="muted">{{ digest.year }}-W{{ "%02d" | format(digest.week) }}</span>
+  {% if digest.next %}
+  <a href="/digest?year={{ digest.next.year }}&week={{ digest.next.week }}">다음 주 →</a>
+  {% endif %}
+</div>
+
 {% for g in digest.groups %}
 <h2 class="area-title">{{ g.area }} <span class="muted">{{ g.total }}편</span></h2>
 {% for p in g.papers %}{% include "_paper_card.html" %}{% endfor %}
 {% else %}
-<p>최근 수집된 논문이 없습니다. <a href="/papers">전체 논문 보기</a></p>
+<p>이 주에 수집된 논문이 없습니다.
+<a href="/digest?year={{ digest.prev.year }}&week={{ digest.prev.week }}">이전 주 보기</a> ·
+<a href="/papers">전체 논문 보기</a></p>
 {% endfor %}
 {% endblock %}
