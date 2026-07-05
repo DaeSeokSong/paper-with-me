@@ -126,3 +126,25 @@ def test_search_strips_whitespace_and_suggests_tasks(client):
     r = client.get("/search", params={"q": "  NOHITXYZ  "})
     assert "“NOHITXYZ”" in r.text  # strip 적용
     assert "인기 벤치마크 둘러보기" in r.text  # 무결과 대안
+
+
+def test_string_none_metric_values_scrubbed(tmp_path):
+    """덤프에 문자열 'None'이 지표 값으로 남은 행 — 표에 >None<로 노출되던
+    문제 (3,000페이지 크롤에서 발견). _loads에서 일괄 정화."""
+    db_path = tmp_path / "nonestr.sqlite"
+    conn = pwc_db.connect(db_path)
+    conn.execute(
+        "INSERT INTO sota_rows (task,dataset,model_name,metrics,paper_url,"
+        "code_links,metrics_order) VALUES (?,?,?,?,?,?,?)",
+        ("Visual Place Recognition", "KITTI", "M",
+         json.dumps({"Recall@1": "91.2", "AUC": "None"}),
+         "https://x/paper/p", "[]", json.dumps(["Recall@1", "AUC"])),
+    )
+    conn.commit()
+    conn.close()
+    c = TestClient(create_app(db_path))
+    r = c.get("/sota/visual-place-recognition/kitti")
+    assert r.status_code == 200
+    assert ">None<" not in r.text
+    assert "91.2" in r.text
+    assert "AUC" not in r.text  # 값이 전부 정크인 컬럼은 제거

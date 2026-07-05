@@ -47,6 +47,12 @@ def _loads(row: dict, *keys: str) -> dict:
         # strip_nulls: parquet 스키마 통합으로 null이 채워진 기존 스냅샷도
         # 읽기 시점에 정화한다 (재빌드 전 배포본 대응)
         out[k] = strip_nulls(json.loads(out[k])) if out.get(k) else []
+        # 덤프에 문자열 "None"이 지표 값으로 남은 행이 있다(전수 크롤에서
+        # 발견: visual-place-recognition/kitti). 여기서 걷어내면 표·CSV·
+        # 차트·API가 전부 정화된 값을 본다.
+        if k == "metrics" and isinstance(out[k], dict):
+            out[k] = {mk: mv for mk, mv in out[k].items()
+                      if mv not in (None, "", "None", "none")}
     return out
 
 
