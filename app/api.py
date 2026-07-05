@@ -70,17 +70,19 @@ def build_router(get_conn) -> APIRouter:
         name = queries.find_task(c, task_slug)
         if not name:
             raise HTTPException(404, "task not found")
+        variants = queries.task_variants(c, task_slug)
         return {"task": name, "slug": task_slug,
-                "benchmarks": queries.task_benchmarks(c, name)}
+                "benchmarks": queries.task_benchmarks(c, name, variants)}
 
     @router.get("/benchmarks/{task_slug}/{dataset_slug}",
                 summary="단일 리더보드 (원본 순서)")
     def benchmark(task_slug: str, dataset_slug: str):
         c = get_conn()
-        name = queries.find_task(c, task_slug)
+        # HTML 라우트와 동일한 해석 규칙 (표기 변형 폴백 포함) — 웹에선
+        # 열리는 보드가 API에서만 404 나지 않도록 공유 리졸버 사용
+        name, dataset = queries.resolve_board(c, task_slug, dataset_slug)
         if not name:
             raise HTTPException(404, "task not found")
-        dataset = queries.find_benchmark_dataset(c, name, dataset_slug)
         if dataset is None:
             raise HTTPException(404, "benchmark not found")
         board = queries.dataset_leaderboard(c, name, dataset)
@@ -96,7 +98,8 @@ def build_router(get_conn) -> APIRouter:
         d = queries.get_dataset(c, slug)
         if not d:
             raise HTTPException(404, "dataset not found")
-        d["benchmarks"] = queries.dataset_leaderboards(c, d["name"])
+        d["benchmarks"] = queries.dataset_leaderboards(c, d["name"],
+                                                       d.get("variants"))
         return d
 
     @router.get("/methods", summary="방법론 카탈로그")

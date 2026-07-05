@@ -22,7 +22,11 @@
 {% endif %}
 {% for p in papers %}{% include "_paper_card.html" %}{% else %}{% if q %}<p>논문 결과가 없습니다.
 <a href="/datasets?q={{ q | urlencode }}">데이터셋에서 찾기</a> ·
-<a href="/methods?q={{ q | urlencode }}">방법론에서 찾기</a></p>{% endif %}{% endfor %}
+<a href="/methods?q={{ q | urlencode }}">방법론에서 찾기</a></p>
+{% if popular_tasks %}
+<p class="muted">인기 벤치마크 둘러보기:</p>
+{% for t in popular_tasks %}<a class="badge" href="/sota/{{ t.slug }}">{{ t.task }}</a>{% endfor %}
+{% endif %}{% endif %}{% endfor %}
 <div class="pager">
   {% if page > 1 %}<a href="/search?q={{ q | urlencode }}&page={{ page - 1 }}">← 이전</a>{% endif %}
   {% if papers | length == PAGE_SIZE %}<a href="/search?q={{ q | urlencode }}&page={{ page + 1 }}">다음 →</a>{% endif %}

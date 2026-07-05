@@ -61,6 +61,58 @@ def render_markdown(text: str | None):
     return Markup(out)
 
 
+def _xml_escape(text: str) -> str:
+    from xml.sax.saxutils import escape
+    return escape(str(text or ""))
+
+
+def _bibtex(slug: str, paper: dict) -> str:
+    """papers 테이블 필드만으로 BibTeX 항목 생성 (외부 의존 없음)."""
+    authors = " and ".join(a for a in paper.get("authors") or []
+                           if isinstance(a, str))
+    year = (paper.get("date") or "")[:4]
+    key = re.sub(r"[^A-Za-z0-9]+", "", slug)[:40] or "paper"
+    entry = "inproceedings" if paper.get("proceeding") else "article"
+    lines = [f"@{entry}{{{key},",
+             f"  title = {{{paper.get('title') or slug}}},"]
+    if authors:
+        lines.append(f"  author = {{{authors}}},")
+    if year:
+        lines.append(f"  year = {{{year}}},")
+    if paper.get("proceeding"):
+        lines.append(f"  booktitle = {{{paper['proceeding']}}},")
+    if paper.get("arxiv_id"):
+        lines.append(f"  eprint = {{{paper['arxiv_id']}}},")
+        lines.append("  archivePrefix = {arXiv},")
+    if paper.get("url_abs"):
+        lines.append(f"  url = {{{paper['url_abs']}}},")
+    lines.append("}")
+    return "\n".join(lines) + "\n"
+
+
+def _atom_feed(base: str, title: str, papers: list) -> str:
+    e = _xml_escape
+    latest = next((p.get("date") for p in papers if p.get("date")), "")
+    entries = []
+    for p in papers:
+        link = f"{base}/paper/{queries.paper_slug(p.get('paper_url'))}"
+        date = (p.get("date") or "")[:10]
+        summary = (p.get("abstract") or "")[:500]
+        entries.append(
+            f"<entry><title>{e(p.get('title'))}</title>"
+            f'<link href="{e(link)}"/>'
+            f"<id>{e(link)}</id>"
+            f"<updated>{e(date)}T00:00:00Z</updated>"
+            f"<summary>{e(summary)}</summary></entry>")
+    return ('<?xml version="1.0" encoding="utf-8"?>\n'
+            '<feed xmlns="http://www.w3.org/2005/Atom">'
+            f"<title>{e(title)}</title>"
+            f'<link href="{e(base)}/feed.xml" rel="self"/>'
+            f"<id>{e(base)}/feed.xml</id>"
+            f"<updated>{e(latest[:10] or '1970-01-01')}T00:00:00Z</updated>"
+            + "".join(entries) + "</feed>")
+
+
 def create_app(db_path: Path | None = None) -> FastAPI:
     db_path = db_path or Path(os.environ.get("PWC_DB", "data/pwc.sqlite"))
     app = FastAPI(title="paper-with-me")
@@ -71,18 +123,28 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     templates.env.globals["PAGE_SIZE"] = queries.PAGE_SIZE
 
     def conn():
-        # SQLite 연결은 요청 스레드마다 새로 연다 (읽기 전용이라 저렴)
-        return queries.connect(db_path)
+        # SQLite 연결은 요청 스레드마다 새로 연다. DDL/마이그레이션 없는
+        # fast 연결 — 스키마는 아래 기동 예열의 connect()가 보장한다.
+        return queries.connect_fast(db_path)
 
     # 비정형 논문 URL 맵을 기동 시 예열 — 첫 사용자 요청이 스냅샷 스캔
     # 비용(느린 디스크에서 수 초)을 지불하지 않도록 한다. DB가 아직 없는
     # 개발 환경 등에서는 조용히 건너뛴다.
     if db_path.exists():
         try:
-            warm = queries.connect(db_path)
-            queries._paper_url_map(warm)
-            # 태그 검색용 역인덱스 — 스냅샷당 1회 구축 (meta 플래그 멱등)
+            warm = queries.connect(db_path)  # 스키마/마이그레이션 보장
+            # 쓰기(commit)를 동반하는 구축을 먼저 — 뒤에 두면 파일 mtime이
+            # 바뀌어 방금 예열한 캐시 키가 즉시 무효화된다 (코드 리뷰 발견)
             queries.ensure_papers_tasks(warm)
+            # 스냅샷 캐시 예열 — 첫 방문자가 5GB 콜드 스캔을 지불하지 않게
+            queries._paper_url_map(warm)
+            queries.task_slugs(warm)
+            queries.task_variants(warm, "")
+            queries.find_paper_task(warm, "")
+            queries._slug_map(warm, "dataset", "SELECT name FROM datasets")
+            queries._slug_map(warm, "method", "SELECT name FROM methods")
+            queries.total_papers(warm)
+            queries._area_map(warm)
         except Exception:  # noqa: BLE001 - 예열 실패가 기동을 막으면 안 됨
             pass
 
@@ -138,11 +200,25 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     def search(request: Request, q: str = "", page: Page = 1,
                missing: str = ""):
         c = conn()
+        q = q.strip()  # 공백만 다른 검색·제목 노출 방지 (포스텔의 법칙)
         papers = queries.search_papers(c, q, page) if q else []
         return render(request, "search.html", q=q, paper_q=q, page=page,
                       papers=papers, missing=missing,
                       task_slugs=queries.task_slugs(c),
+                      popular_tasks=(queries.sota_tasks(c)[:6]
+                                     if q and not papers else None),
                       matches=queries.search_matches(c, q) if q else None)
+
+    @app.get("/paper/{slug}.bib", include_in_schema=False)
+    def paper_bibtex(slug: str):
+        """BibTeX 인용 — 연구자의 핵심 반복 작업 (papers 필드만으로 생성)."""
+        c = conn()
+        p = queries.get_paper(c, slug) or queries.get_paper_stub(c, slug)
+        if not p:
+            raise HTTPException(404, "논문을 찾을 수 없습니다")
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(_bibtex(slug, p),
+                                 media_type="text/plain; charset=utf-8")
 
     @app.get("/paper/{slug}", response_class=HTMLResponse)
     def paper(request: Request, slug: str):
@@ -220,6 +296,40 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     def task_alias(task_slug: str):
         return RedirectResponse(f"/sota/{task_slug}", status_code=301)
 
+    @app.get("/sota/{task_slug}/{dataset_slug}.csv", include_in_schema=False)
+    def sota_board_csv(task_slug: str, dataset_slug: str):
+        """리더보드 CSV — 표를 스프레드시트·논문으로 가져가는 수요."""
+        import csv
+        import io
+        c = conn()
+        task, dataset = queries.resolve_board(c, task_slug, dataset_slug)
+        if not task or dataset is None:
+            raise HTTPException(404, "벤치마크를 찾을 수 없습니다")
+        board = queries.dataset_leaderboard(c, task, dataset)
+        ranks = queries.board_ranks(
+            board["rows"],
+            board["metric_names"][0] if board["metric_names"] else None)
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["rank", "model"] + board["metric_names"]
+                   + ["extra_training_data", "paper_title", "paper_url",
+                      "year", "source"])
+        for rank, r in zip(ranks, board["rows"]):
+            metrics = r.get("metrics") if isinstance(r.get("metrics"), dict) \
+                else {}
+            w.writerow([rank, r.get("model_name")]
+                       + [metrics.get(m, "") for m in board["metric_names"]]
+                       + [r.get("uses_additional_data") or "",
+                          r.get("paper_title") or "",
+                          r.get("paper_url") or "",
+                          (r.get("paper_date") or "")[:4],
+                          r.get("source") or "archive"])
+        from fastapi.responses import Response
+        return Response(buf.getvalue(), media_type="text/csv",
+                        headers={"Content-Disposition":
+                                 f'attachment; filename="{task_slug}'
+                                 f'-{dataset_slug}.csv"'})
+
     @app.get("/sota/{task_slug}/{dataset_slug}", response_class=HTMLResponse)
     def sota_board(request: Request, task_slug: str, dataset_slug: str,
                    page: Page = 1, per: int = 20):
@@ -227,20 +337,9 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         if per not in queries.BOARD_PAGE_SIZES:
             per = queries.BOARD_PAGE_SIZE
         c = conn()
-        task = queries.find_task(c, task_slug)
+        task, dataset = queries.resolve_board(c, task_slug, dataset_slug)
         if not task:
             raise HTTPException(404, "task를 찾을 수 없습니다")
-        dataset = queries.find_benchmark_dataset(c, task, dataset_slug)
-        if dataset is None:
-            # 대표 task에 없으면 같은 slug의 표기 변형에서 찾는다
-            # (변형 쪽에만 있는 벤치마크가 404 나던 문제 — 크롤 발견)
-            for alt in queries.task_variants(c, task_slug):
-                if alt == task:
-                    continue
-                dataset = queries.find_benchmark_dataset(c, alt, dataset_slug)
-                if dataset is not None:
-                    task = alt
-                    break
         if dataset is None:
             raise HTTPException(404, "벤치마크를 찾을 수 없습니다")
         board = queries.dataset_leaderboard(c, task, dataset)
@@ -291,6 +390,65 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         if not m:
             return _search_fallback(slug, kind="method")
         return render(request, "method.html", method=m)
+
+    @app.get("/feed.xml", include_in_schema=False)
+    def feed(request: Request, task: str = ""):
+        """Atom 피드 — 최신 논문(또는 태그별). RSS 리더 구독용."""
+        c = conn()
+        if task:
+            items, _ = queries.papers_by_task(c, task, 1)
+        else:
+            items = queries.latest_papers(c, 1)
+        base = str(request.base_url).rstrip("/")
+        title = f"paper-with-me — {task}" if task else "paper-with-me — 최신 논문"
+        from fastapi.responses import Response
+        return Response(_atom_feed(base, title, items),
+                        media_type="application/atom+xml")
+
+    @app.get("/sitemap.xml", include_in_schema=False)
+    def sitemap(request: Request):
+        """카탈로그 사이트맵 — 정적 페이지 + task/데이터셋/방법론.
+        (논문 57만 건은 50k URL 한도 초과라 카탈로그부터; 전량은 분할 확장)"""
+        c = conn()
+        base = str(request.base_url).rstrip("/")
+        urls = [f"{base}{p}" for p in
+                ("/", "/papers", "/sota", "/datasets", "/methods",
+                 "/trends", "/digest")]
+        urls += [f"{base}/sota/{s}" for s in sorted(queries.task_slugs(c))]
+        urls += [f"{base}/dataset/{s}" for s in sorted(queries._slug_map(
+            c, "dataset", "SELECT name FROM datasets"))]
+        urls += [f"{base}/method/{s}" for s in sorted(queries._slug_map(
+            c, "method", "SELECT name FROM methods"))]
+        body = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+                + "".join(f"<url><loc>{_xml_escape(u)}</loc></url>"
+                          for u in urls[:50000])
+                + "</urlset>")
+        from fastapi.responses import Response
+        return Response(body, media_type="application/xml")
+
+    @app.get("/robots.txt", include_in_schema=False)
+    def robots(request: Request):
+        from fastapi.responses import PlainTextResponse
+        base = str(request.base_url).rstrip("/")
+        return PlainTextResponse(
+            f"User-agent: *\nAllow: /\nSitemap: {base}/sitemap.xml\n")
+
+    @app.get("/opensearch.xml", include_in_schema=False)
+    def opensearch(request: Request):
+        """브라우저 주소창 검색 등록용 디스크립터."""
+        base = str(request.base_url).rstrip("/")
+        from fastapi.responses import Response
+        return Response(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<OpenSearchDescription '
+            'xmlns="http://a9.com/-/spec/opensearch/1.1/">'
+            "<ShortName>paper-with-me</ShortName>"
+            "<Description>ML 논문·코드·SOTA 검색</Description>"
+            f'<Url type="text/html" '
+            f'template="{base}/search?q={{searchTerms}}"/>'
+            "</OpenSearchDescription>",
+            media_type="application/opensearchdescription+xml")
 
     @app.get("/digest", response_class=HTMLResponse)
     def digest(request: Request,

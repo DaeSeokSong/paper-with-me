@@ -158,12 +158,15 @@ def extract_from_text(title: str, abstract: str, index: dict) -> list[dict]:
     return out
 
 
-def collect(conn: sqlite3.Connection, max_papers: int = 2000) -> int:
+def collect(conn: sqlite3.Connection) -> int:
     """수집 논문 전체를 대상으로 auto 행을 재계산한다 (stateless).
 
     증분(로그) 방식 대신 매 실행 전량 재추출 — 추출 규칙을 강화하면
     과거 실행이 남긴 오염 행이 다음 실행에서 자동으로 정화된다.
-    텍스트 처리라 수천 편도 수 초면 끝난다.
+    텍스트 처리라 수만 편도 수십 초면 끝난다.
+
+    주의: 삭제 범위와 재계산 범위는 반드시 일치해야 한다 — 전량 삭제 후
+    일부만 재추출하면(과거 LIMIT 2000) 창 밖 논문의 행이 영구 유실된다.
     """
     removed = conn.execute(
         "DELETE FROM sota_rows WHERE source = 'auto'").rowcount
@@ -172,8 +175,7 @@ def collect(conn: sqlite3.Connection, max_papers: int = 2000) -> int:
     papers = conn.execute(
         """SELECT paper_url, title, abstract, date FROM papers
            WHERE source != 'archive' AND abstract IS NOT NULL
-           ORDER BY date DESC LIMIT ?""",
-        (max_papers,),
+           ORDER BY date DESC"""
     ).fetchall()
     if not papers:
         print("[results] 추출 대상 신규 논문 없음", flush=True)

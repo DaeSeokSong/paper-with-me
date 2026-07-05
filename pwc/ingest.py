@@ -117,6 +117,23 @@ def _dumps(value: object) -> str | None:
     return None if value is None else json.dumps(value, ensure_ascii=False)
 
 
+def clean_date(value: object) -> str | None:
+    """말이 안 되는 날짜(오타 미래 연도 등)를 적재 시점에 정화한다.
+
+    아카이브에 '2222-12-22' 같은 행이 실재해 최신순 정렬·날짜 앵커를
+    오염시켰다 — 조회 계층의 FUTURE_GUARD는 방어선이고 근본 정화는 여기."""
+    import datetime as _dt
+    if not isinstance(value, str) or len(value) < 10:
+        return value if isinstance(value, str) else None
+    try:
+        d = _dt.date.fromisoformat(value[:10])
+    except ValueError:
+        return None
+    if d.year < 1900 or d > _dt.date.today() + _dt.timedelta(days=2):
+        return None
+    return value
+
+
 def _executemany(conn: sqlite3.Connection, sql: str, rows: Iterable[tuple]) -> int:
     """배치 단위로 INSERT하고 총 행 수를 반환한다."""
     count = 0
@@ -159,7 +176,7 @@ def ingest_papers(conn: sqlite3.Connection, path: Path) -> int:
             r.get("url_abs"),
             r.get("url_pdf"),
             r.get("proceeding"),
-            r.get("date"),
+            clean_date(r.get("date")),
             _dumps(_nested(r.get("authors"))),
             _dumps(_nested(r.get("tasks"))),
             _dumps(_nested(r.get("methods"))),
@@ -167,7 +184,12 @@ def ingest_papers(conn: sqlite3.Connection, path: Path) -> int:
         for r in iter_records(path)
         if _paper_pk(r) is not None
     )
-    return _executemany(conn, sql, rows)
+    count = _executemany(conn, sql, rows)
+    # tasks 내용이 바뀌어도 행 수는 그대로일 수 있다 — 태그 역인덱스
+    # (papers_tasks)가 재구축되도록 플래그를 무효화한다
+    conn.execute("DELETE FROM meta WHERE key = 'papers_tasks_built'")
+    conn.commit()
+    return count
 
 
 def _paper_pk(record: dict) -> str | None:
@@ -266,7 +288,10 @@ def ingest_evaluations(conn: sqlite3.Connection, path: Path) -> int:
               paper_url, paper_title, paper_date, code_links, metrics_order,
               area, uses_additional_data)
              VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"""
-    conn.execute("DELETE FROM sota_rows")
+    # 아카이브 재적재는 archive 행만 교체한다 — 커뮤니티 기여(contrib)와
+    # 자동 추출(auto) 행을 지우면 안 된다
+    conn.execute(
+        "DELETE FROM sota_rows WHERE source IS NULL OR source = 'archive'")
 
     def flatten(task_obj: dict, parent: str | None,
                 area: str | None = None) -> Iterator[tuple]:
@@ -288,7 +313,7 @@ def ingest_evaluations(conn: sqlite3.Connection, path: Path) -> int:
                     _dumps(_nested(row.get("metrics"))),
                     row.get("paper_url"),
                     row.get("paper_title"),
-                    row.get("paper_date"),
+                    clean_date(row.get("paper_date")),
                     _dumps(_nested(row.get("code_links"))),
                     metrics_order,
                     area,

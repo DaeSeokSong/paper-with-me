@@ -2,7 +2,7 @@
 {% block title %}Datasets · paper-with-me{% endblock %}
 {% block content %}
 <h1>Datasets</h1>
-<form action="/datasets" method="get">
+<form action="/datasets" method="get" class="catalog-search">
   <input type="search" name="q" placeholder="데이터셋 검색…"
          aria-label="데이터셋 검색" value="{{ q }}">
 </form>

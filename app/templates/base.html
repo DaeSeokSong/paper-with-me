@@ -8,6 +8,16 @@
 <link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/static/icon.svg">
 <meta name="theme-color" content="#ffffff">
+{% block meta %}
+<meta property="og:title" content="paper-with-me">
+<meta property="og:description" content="ML 논문·코드·SOTA 리더보드 — Papers with Code 복원 프로젝트">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+{% endblock %}
+<link rel="search" type="application/opensearchdescription+xml"
+      title="paper-with-me" href="/opensearch.xml">
+<link rel="alternate" type="application/atom+xml"
+      title="paper-with-me 최신 논문" href="/feed.xml">
 <script>
 /* 원본 paperswithcode.com에는 다크 모드가 없었다 — 기본은 원본 그대로의
    라이트 테마로 고정하고, 다크는 헤더 토글로 선택한 사용자에게만 적용한다.
@@ -160,7 +170,21 @@
   tr.rank-silver td { background: rgba(176, 190, 197, .16); }
   tr.rank-bronze td { background: rgba(217, 144, 90, .14); }
   tr.rank-top td { background: rgba(33, 203, 199, .08); }
+  .pager { align-items: center; }
   .board-pager { align-items: center; flex-wrap: wrap; }
+  /* 카탈로그(datasets/methods) 페이지 검색 인풋 — 헤더와 동일 스타일 */
+  .catalog-search input { background: var(--input-bg);
+    border: 1px solid var(--input-border); color: var(--input-fg);
+    border-radius: 4px; padding: 8px 12px; width: 320px; max-width: 100%; }
+  /* 리더보드 code 링크 터치 타겟 */
+  td .code-link { display: inline-block; padding: 4px 2px; }
+  /* 좁은 화면에서 표가 잘렸음을 알리는 우측 페이드 힌트 */
+  .table-wrap { position: relative; }
+  @media (max-width: 900px) {
+    .table-wrap::after { content: ""; position: absolute; top: 0; right: 0;
+      bottom: 0; width: 28px; pointer-events: none;
+      background: linear-gradient(to left, var(--bg), transparent); }
+  }
   .per-picker { margin-left: auto; }
   /* 페이저·페이지 크기 링크는 엄지 터치 타겟을 확보한다 (WCAG 2.5.8) */
   .pager a, .per-picker a, .per-picker b {
@@ -271,6 +295,13 @@ if ("serviceWorker" in navigator) {
     });
     document.addEventListener("click", function (e) {
       if (!box.contains(e.target) && e.target !== input) hide();
+    });
+    /* '/' 단축키로 검색 포커스 (입력 중이 아닐 때만) */
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "/" && !/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) {
+        e.preventDefault();
+        input.focus();
+      }
     });
   }
 

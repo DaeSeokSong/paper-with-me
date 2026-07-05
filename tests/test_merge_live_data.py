@@ -46,7 +46,9 @@ def test_merge_carries_collected_data_into_rebuild(tmp_path):
     new.close()
 
     counts = merge(tmp_path / "new.sqlite", tmp_path / "old.sqlite")
-    assert counts == {"papers": 1, "repos": 1, "signals": 1}
+    assert counts == {"papers": 1, "repos": 1, "signals": 1,
+                      "sota_rows": 0, "repo_search_log": 0,
+                      "model_search_log": 0}
 
     conn = db.connect(tmp_path / "new.sqlite")
     conn.row_factory = sqlite3.Row
@@ -81,3 +83,36 @@ def test_merge_skips_papers_already_in_archive(tmp_path):
 
     counts = merge(tmp_path / "new.sqlite", tmp_path / "old.sqlite")
     assert counts["papers"] == 0
+
+
+def test_merge_carries_contrib_auto_rows_and_search_logs(tmp_path):
+    """재빌드 이관이 커뮤니티 기여·자동 추출 리더보드 행과 검색 이력을
+    보존한다 — 누락되면 기여는 공백, auto는 영구 유실, 쿼터는 재소모
+    (코드 리뷰에서 발견된 데이터 유실 체인)."""
+    import json as _json
+
+    old_db = tmp_path / "old.sqlite"
+    conn = db.connect(old_db)
+    for source, model in (("contrib", "ContribNet"), ("auto", "AutoNet"),
+                          ("archive", "OldArchive")):
+        conn.execute(
+            "INSERT INTO sota_rows (task,dataset,model_name,metrics,"
+            "paper_url,code_links,source) VALUES (?,?,?,?,?,?,?)",
+            ("T", "DS", model, _json.dumps({"Acc": "90"}),
+             f"https://x/paper/{model.lower()}", "[]", source),
+        )
+    conn.execute("INSERT INTO repo_search_log VALUES (?, ?)",
+                 ("https://x/paper/p", "2026-01-01"))
+    conn.commit(); conn.close()
+
+    new_db = tmp_path / "new.sqlite"
+    db.connect(new_db).close()
+    counts = merge(new_db, old_db)
+    assert counts["sota_rows"] == 2  # contrib + auto (archive 제외)
+    assert counts["repo_search_log"] == 1
+
+    check = db.connect(new_db)
+    sources = {r[0] for r in check.execute(
+        "SELECT source FROM sota_rows")}
+    assert sources == {"contrib", "auto"}
+    check.close()

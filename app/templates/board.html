@@ -5,7 +5,9 @@
 <h1 lang="en">{{ task }} on
   {%- if dataset_in_catalog %} <a href="/dataset/{{ dataset_slug }}">{{ board.dataset }}</a>
   {%- else %} {{ board.dataset }}{% endif %}</h1>
-<p class="muted">{{ board.rows | length }}개 결과</p>
+<p class="muted">{{ board.rows | length }}개 결과 ·
+<a href="/sota/{{ task_slug }}/{{ dataset_slug }}.csv">⬇ CSV</a> ·
+<a href="/api/v1/benchmarks/{{ task_slug }}/{{ dataset_slug }}">JSON</a></p>
 
 {% if chart %}
 {# 원본 PWC 리더보드 상단의 SOTA 추이 차트 — 점: 개별 결과, 선: 최고 기록 #}
@@ -99,9 +101,9 @@
           전체 목록은 논문 페이지에서 제공한다 -#}
       {%- for c in r.code_links[:3] -%}
         {%- if c is mapping and c.get("url") -%}
-          <a href="{{ c.get('url') }}">{{ c.get("title") or "code" }}</a>
+          <a class="code-link" href="{{ c.get('url') }}">{{ c.get("title") or "code" }}</a>
         {%- elif c is string -%}
-          <a href="{{ c }}">code</a>
+          <a class="code-link" href="{{ c }}">code</a>
         {%- endif -%}
         {%- if not loop.last %} · {% endif -%}
       {%- endfor -%}

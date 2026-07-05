@@ -122,11 +122,9 @@ MIGRATIONS = [
     "ALTER TABLE datasets ADD COLUMN variants TEXT",
     # 리더보드 행 출처 — 'archive'(덤프)/'contrib'(기여 PR)/'auto'(초록 추출)
     "ALTER TABLE sota_rows ADD COLUMN source TEXT DEFAULT 'archive'",
-    # 초록 결과 추출을 이미 시도한 논문 기록 (0건 논문 재시도 방지)
-    """CREATE TABLE IF NOT EXISTS result_extract_log (
-        paper_url   TEXT PRIMARY KEY,
-        searched_at TEXT
-    )""",
+    # (제거됨) result_extract_log — 자동 추출이 stateless 재계산으로 바뀌어
+    # 시도 로그가 필요 없어졌다. 남아 있는 구 스냅샷의 테이블은 무해하다.
+    "DROP TABLE IF EXISTS result_extract_log",
 ]
 
 FTS_SCHEMA = """
@@ -149,7 +147,8 @@ CREATE TRIGGER IF NOT EXISTS papers_fts_ad AFTER DELETE ON papers BEGIN
     INSERT INTO papers_fts(papers_fts, rowid, title, abstract)
     VALUES ('delete', old.rowid, old.title, old.abstract);
 END;
-CREATE TRIGGER IF NOT EXISTS papers_fts_au AFTER UPDATE ON papers BEGIN
+CREATE TRIGGER IF NOT EXISTS papers_fts_au
+AFTER UPDATE OF title, abstract ON papers BEGIN
     INSERT INTO papers_fts(papers_fts, rowid, title, abstract)
     VALUES ('delete', old.rowid, old.title, old.abstract);
     INSERT INTO papers_fts(rowid, title, abstract)
@@ -165,6 +164,18 @@ def connect(db_path: Path) -> sqlite3.Connection:
     conn.executescript(SCHEMA)
     try:
         conn.executescript(FTS_SCHEMA)
+        # 구 스냅샷의 UPDATE 트리거를 title/abstract 한정판으로 교체 —
+        # tasks-only UPDATE(auto_tag)가 전문 재토큰화를 유발하고, 미색인
+        # 행에 대한 'delete'가 인덱스를 오염시킬 수 있다. 멱등.
+        conn.executescript(
+            """DROP TRIGGER IF EXISTS papers_fts_au;
+               CREATE TRIGGER papers_fts_au
+               AFTER UPDATE OF title, abstract ON papers BEGIN
+                 INSERT INTO papers_fts(papers_fts, rowid, title, abstract)
+                 VALUES ('delete', old.rowid, old.title, old.abstract);
+                 INSERT INTO papers_fts(rowid, title, abstract)
+                 VALUES (new.rowid, new.title, new.abstract);
+               END;""")
     except sqlite3.OperationalError:
         # FTS5 미지원 빌드에서는 전문 검색 없이 동작
         pass
@@ -176,6 +187,17 @@ def connect(db_path: Path) -> sqlite3.Connection:
             if "duplicate column name" not in str(e):
                 raise
     conn.commit()
+    return conn
+
+
+def connect_fast(db_path: Path) -> sqlite3.Connection:
+    """요청 경로용 연결 — DDL/마이그레이션 없이 연다.
+
+    connect()는 executescript(스키마+FTS)와 마이그레이션 14종+commit을
+    수행해 요청마다 쓰기 트랜잭션이 생긴다(수집 작업과 잠금 경쟁).
+    스키마는 기동 예열의 connect()가 이미 보장하므로 요청은 이것을 쓴다."""
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 

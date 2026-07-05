@@ -54,6 +54,34 @@ def merge(new_db: Path, old_db: Path) -> dict[str, int]:
            FROM old.signals"""
     ).rowcount
 
+    # 커뮤니티 기여·자동 추출 리더보드 행 — 재빌드가 이걸 버리면 기여는
+    # 다음 collect까지 공백, auto는 영구 유실이었다 (코드 리뷰 발견)
+    counts["sota_rows"] = conn.execute(
+        """INSERT INTO sota_rows
+           (task, parent_task, dataset, model_name, metrics, paper_url,
+            paper_title, paper_date, code_links, metrics_order, area,
+            uses_additional_data, source)
+           SELECT o.task, o.parent_task, o.dataset, o.model_name, o.metrics,
+                  o.paper_url, o.paper_title, o.paper_date, o.code_links,
+                  o.metrics_order, o.area, o.uses_additional_data, o.source
+           FROM old.sota_rows o
+           WHERE o.source IN ('contrib', 'auto')
+             AND NOT EXISTS (SELECT 1 FROM sota_rows n
+                             WHERE n.task = o.task AND n.dataset = o.dataset
+                               AND n.paper_url = o.paper_url)"""
+    ).rowcount
+
+    # 검색 이력 — 없으면 재빌드마다 GitHub/HF 쿼터가 0건 확인된 논문
+    # 재검색에 소모된다
+    for log in ("repo_search_log", "model_search_log"):
+        counts[log] = conn.execute(
+            f"""INSERT OR IGNORE INTO {log} (paper_url, searched_at)
+                SELECT paper_url, searched_at FROM old.{log}"""
+        ).rowcount
+
+    # 이관된 논문의 tasks가 태그 역인덱스에 반영되도록 플래그 무효화
+    conn.execute("DELETE FROM meta WHERE key = 'papers_tasks_built'")
+
     conn.commit()
     conn.execute("DETACH DATABASE old")
     # 이관된 논문의 검색 인덱스 반영 (트리거가 INSERT를 처리하지만,

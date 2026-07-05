@@ -1,5 +1,12 @@
 {% extends "base.html" %}
 {% block title %}{{ paper.title }} · paper-with-me{% endblock %}
+{% block meta %}
+<meta property="og:title" content="{{ paper.title }}">
+<meta property="og:description" content="{{ (paper.abstract or '논문 상세 — 코드 구현과 벤치마크 결과') | truncate(200) }}">
+<meta property="og:type" content="article">
+{% if paper.date %}<meta property="article:published_time" content="{{ paper.date }}">{% endif %}
+<meta name="twitter:card" content="summary">
+{% endblock %}
 {% block content %}
 <p class="muted"><a href="/">홈</a> › <a href="/papers">Papers</a></p>
 <h1 lang="en">{{ paper.title }}</h1>
@@ -25,6 +32,8 @@
   <a class="btn" rel="noopener"
      href="https://scholar.google.com/scholar?q={{ paper.title | urlencode }}">🔎 Google Scholar</a>
   {% endif %}
+  <a class="btn" href="/paper/{{ request.url.path.rsplit('/', 1)[-1] }}.bib"
+     title="BibTeX 인용 다운로드">BibTeX</a>
   {% if paper.arxiv_id %}<span class="muted">arXiv:{{ paper.arxiv_id }}</span>{% endif %}
 </div>
 

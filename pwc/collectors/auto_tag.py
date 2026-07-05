@@ -20,9 +20,13 @@ MAX_TAGS = 4
 
 
 def _vocabulary(conn: sqlite3.Connection) -> list[str]:
+    # 자동 추출(auto) 행이 만든 task명이 다시 태깅 어휘가 되면 오염이
+    # 자기 강화된다 — results_extract의 sanity 기준과 같은 원칙으로 제외
     names = [
         t for (t,) in conn.execute(
-            "SELECT DISTINCT task FROM sota_rows WHERE task IS NOT NULL")
+            """SELECT DISTINCT task FROM sota_rows
+               WHERE task IS NOT NULL
+                 AND (source IS NULL OR source != 'auto')""")
         if isinstance(t, str) and len(t.split()) >= 2
     ]
     # 긴 이름 우선 — "Few-Shot Image Classification"이 "Image

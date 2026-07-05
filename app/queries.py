@@ -28,6 +28,15 @@ def connect(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
+def connect_fast(db_path: Path) -> sqlite3.Connection:
+    """요청 경로용 — 스키마/마이그레이션 없이 연다 (기동 예열이 보장).
+    요청마다 DDL+commit이 도는 쓰기 트랜잭션을 없애 수집 작업과의
+    잠금 경쟁·지연을 제거한다."""
+    conn = pwc_db.connect_fast(db_path)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
 def slugify(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
 
@@ -74,6 +83,11 @@ def _like(term: str) -> str:
 
 # ---------------------------------------------------------------- papers
 
+# 아카이브에 '2222-12-22' 같은 오타 미래 날짜 행이 존재한다(적재 시
+# clean_date로 정화하지만, 정화 전 스냅샷 대비 방어선) — 모든 최신성
+# 질의에 상한을 건다
+FUTURE_GUARD = "date <= date('now', '+1 day')"
+
 _total_cache: dict[tuple, int] = {}
 
 
@@ -84,14 +98,10 @@ def total_papers(conn) -> int:
     if key not in _total_cache:
         _total_cache.clear()
         _total_cache[key] = conn.execute(
-            "SELECT COUNT(*) FROM papers WHERE date IS NOT NULL"
+            f"SELECT COUNT(*) FROM papers WHERE date IS NOT NULL "
+            f"AND {FUTURE_GUARD}"
         ).fetchone()[0]
     return _total_cache[key]
-
-
-# 아카이브에 '2222-12-22' 같은 오타 미래 날짜 행이 존재한다 — 최신순
-# 정렬과 날짜 앵커가 오염되지 않도록 모든 최신성 질의에 상한을 건다
-FUTURE_GUARD = "date <= date('now', '+1 day')"
 
 
 def ensure_papers_tasks(conn) -> None:
@@ -104,19 +114,19 @@ def ensure_papers_tasks(conn) -> None:
         """CREATE TABLE IF NOT EXISTS papers_tasks (
              task TEXT, paper_url TEXT)"""
     )
-    total = conn.execute(
-        "SELECT COUNT(*) FROM papers WHERE tasks IS NOT NULL"
-    ).fetchone()[0]
+    # 플래그 존재 기반 멱등 — 재구축 트리거는 쓰기 주체(papers 재적재,
+    # auto_tag, merge_live_data)가 플래그를 지우는 방식. 과거의 COUNT 비교는
+    # 확인용 전체 스캔을 매 기동마다 유발했고, 개수 불변 내용 변경을 놓쳤다.
     flag = conn.execute(
         "SELECT value FROM meta WHERE key = 'papers_tasks_built'"
     ).fetchone()
-    if flag and flag[0] == str(total):
+    if flag:
         return
     conn.execute("DELETE FROM papers_tasks")
     try:
         conn.execute(
             """INSERT INTO papers_tasks (task, paper_url)
-               SELECT je.value, p.paper_url
+               SELECT DISTINCT je.value, p.paper_url
                FROM papers p, json_each(p.tasks) je
                WHERE p.tasks IS NOT NULL AND je.value IS NOT NULL"""
         )
@@ -130,7 +140,7 @@ def ensure_papers_tasks(conn) -> None:
                 tasks = json.loads(tasks_json)
             except ValueError:
                 continue
-            for t in tasks if isinstance(tasks, list) else []:
+            for t in dict.fromkeys(tasks if isinstance(tasks, list) else []):
                 if isinstance(t, str) and t:
                     batch.append((t, paper_url))
         conn.executemany(
@@ -139,21 +149,21 @@ def ensure_papers_tasks(conn) -> None:
         "CREATE INDEX IF NOT EXISTS idx_papers_tasks ON papers_tasks(task)")
     conn.execute(
         "INSERT OR REPLACE INTO meta (key, value) "
-        "VALUES ('papers_tasks_built', ?)", (str(total),))
+        "VALUES ('papers_tasks_built', '1')")
     conn.commit()
 
 
 def papers_by_task(conn, task: str, page: int = 1) -> tuple[list[dict], int]:
     """태그(task명) 기준 논문 목록 + 총 건수. papers_tasks 인덱스 사용."""
+    count_sql = f"""SELECT COUNT(*) FROM papers_tasks pt
+                    JOIN papers p ON p.paper_url = pt.paper_url
+                    WHERE pt.task = ? AND p.date IS NOT NULL
+                      AND p.{FUTURE_GUARD}"""
     try:
-        total = conn.execute(
-            "SELECT COUNT(*) FROM papers_tasks WHERE task = ?", (task,)
-        ).fetchone()[0]
+        total = conn.execute(count_sql, (task,)).fetchone()[0]
     except sqlite3.OperationalError:  # 인덱스 미구축 (예열 전)
         ensure_papers_tasks(conn)
-        total = conn.execute(
-            "SELECT COUNT(*) FROM papers_tasks WHERE task = ?", (task,)
-        ).fetchone()[0]
+        total = conn.execute(count_sql, (task,)).fetchone()[0]
     rows = conn.execute(
         f"""SELECT p.* FROM papers_tasks pt
             JOIN papers p ON p.paper_url = pt.paper_url
@@ -246,11 +256,15 @@ def trending_papers(conn, limit: int = 10) -> list[dict]:
     ).fetchall()
     papers = [_loads(r, "authors", "tasks", "methods") for r in rows]
     # 최신 창 안에서 인기 신호(업보트·스타·구현 수) 순으로 정렬
-    papers.sort(key=lambda p: ((p.get("hf_upvotes") or 0) * 10
-                               + (p.get("github_stars") or 0) / 10
-                               + (p.get("repo_count") or 0)),
-                reverse=True)
+    papers.sort(key=_popularity, reverse=True)
     return papers[:limit]
+
+
+def _popularity(p: dict) -> float:
+    """인기 점수 — 트렌딩과 다이제스트가 같은 기준을 쓰도록 공유한다."""
+    return ((p.get("hf_upvotes") or 0) * 10
+            + (p.get("github_stars") or 0) / 10
+            + (p.get("repo_count") or 0))
 
 
 SLUG_RE = re.compile(r"[A-Za-z0-9._-]{1,200}")
@@ -327,13 +341,21 @@ def get_paper_stub(conn, slug: str) -> dict | None:
     if not SLUG_RE.fullmatch(slug):
         return None
     url = f"https://paperswithcode.com/paper/{slug}"
+    # get_paper와 동일하게 버전 접미(vN)를 뗀 arXiv URL도 시도 — 한쪽만
+    # 지원하면 같은 slug가 완전 페이지에선 열리고 스텁에선 404가 된다
+    arxiv_ids = [slug]
+    m = re.fullmatch(r"(\d{4}\.\d{4,5})v\d+", slug)
+    if m:
+        arxiv_ids.append(m.group(1))
+    candidates = [url] + [f"{scheme}://arxiv.org/abs/{i}"
+                          for i in arxiv_ids for scheme in ("https", "http")]
     rows = [
         _loads(r, "metrics", "code_links")
         for r in conn.execute(
-            """SELECT * FROM sota_rows
-               WHERE paper_url IN (?, ?, ?) ORDER BY id""",
-            (url, f"https://arxiv.org/abs/{slug}",
-             f"http://arxiv.org/abs/{slug}"),
+            f"""SELECT * FROM sota_rows
+                WHERE paper_url IN ({','.join('?' * len(candidates))})
+                ORDER BY id""",
+            candidates,
         )
     ]
     if not rows:
@@ -397,10 +419,11 @@ def search_papers(conn, q: str, page: int = 1) -> list[dict]:
                    WHERE papers_fts MATCH ? ORDER BY rank LIMIT ? OFFSET ?""",
                 (_fts_query(q), PAGE_SIZE, offset),
             ).fetchall()
-            if rows or page > 1:
+            if rows:
                 return [_loads(r, "authors", "tasks", "methods") for r in rows]
-            # 단어 단위 FTS가 0건이면 부분 문자열 LIKE로 폴백 (제목 일부만
-            # 아는 사용자, 이모지 등 토큰화 불가 문자 대응)
+            # FTS가 0건이면 부분 문자열 LIKE로 폴백 (제목 일부만 아는
+            # 사용자, 이모지 등 토큰화 불가 문자 대응). page>1에서도
+            # 폴백해야 LIKE 결과의 2페이지 이후가 비지 않는다.
         except sqlite3.OperationalError:
             pass  # 잘못된 FTS 구문도 LIKE로 폴백
     rows = conn.execute(
@@ -514,6 +537,21 @@ def methods_glossary(conn, method_names: list) -> list[dict]:
     return out
 
 
+_area_maps: dict[tuple, dict] = {}
+
+
+def _area_map(conn) -> dict:
+    """task → area 맵 — 스냅샷 단위 불변인데 주차 캐시 미스마다 155k행
+    GROUP BY를 재실행하던 것을 캐시로 대체."""
+    key = _db_key(conn)
+    if key not in _area_maps:
+        _area_maps.clear()
+        _area_maps[key] = dict(conn.execute(
+            "SELECT task, MAX(area) FROM sota_rows "
+            "WHERE task IS NOT NULL AND area IS NOT NULL GROUP BY task"))
+    return _area_maps[key]
+
+
 _digest_cache: dict[tuple, dict] = {}
 
 
@@ -557,13 +595,8 @@ def weekly_digest(conn, year: int | None = None,
         (start.isoformat(), end.isoformat() + "~"),  # '~' > '9': 시각 접미 포함
     ).fetchall()
     papers = [_loads(r, "authors", "tasks", "methods") for r in rows]
-    papers.sort(key=lambda p: ((p.get("hf_upvotes") or 0) * 10
-                               + (p.get("github_stars") or 0) / 10
-                               + (p.get("repo_count") or 0)),
-                reverse=True)
-    area_of = dict(conn.execute(
-        "SELECT task, MAX(area) FROM sota_rows "
-        "WHERE task IS NOT NULL AND area IS NOT NULL GROUP BY task"))
+    papers.sort(key=_popularity, reverse=True)
+    area_of = _area_map(conn)
     groups: dict[str, list[dict]] = {}
     for p in papers:
         area = next((area_of[t] for t in p["tasks"] if t in area_of), None)
@@ -581,8 +614,12 @@ def weekly_digest(conn, year: int | None = None,
                     if has_next else None),
            "groups": [{"area": a, "papers": ps[:8], "total": len(ps)}
                       for a, ps in ordered]}
-    if len(_digest_cache) > 60:  # 주차 탐색으로 무한 증식 방지
-        _digest_cache.clear()
+    # 이전 스냅샷 엔트리 우선 제거; 그래도 넘치면 오래된 것부터 —
+    # 전체 clear는 현재 주차 핫 캐시까지 증발시킨다
+    for stale in [k for k in _digest_cache if k[0] != key[0]]:
+        del _digest_cache[stale]
+    while len(_digest_cache) > 60:
+        del _digest_cache[next(iter(_digest_cache))]
     _digest_cache[key] = out
     return out
 
@@ -664,13 +701,7 @@ def board_ranks(rows: list[dict], metric: str | None) -> list[int]:
     ranks: list[int] = []
     prev_val: float | None = None
     for i, r in enumerate(rows):
-        val = None
-        if metric and isinstance(r.get("metrics"), dict):
-            try:
-                val = float(str(r["metrics"].get(metric, "")
-                                ).replace("%", "").replace(",", "").strip())
-            except ValueError:
-                val = None
+        val = _metric_value(r, metric) if metric else None
         if ranks and val is not None and val == prev_val:
             ranks.append(ranks[-1])  # 공동 순위
         else:
@@ -759,6 +790,26 @@ def task_benchmarks(conn, task: str,
     return [dict(r) | {"slug": slugify(r["dataset"])} for r in rows]
 
 
+def resolve_board(conn, task_slug: str,
+                  dataset_slug: str) -> tuple[str | None, str | None]:
+    """(task_slug, dataset_slug) → (task명, dataset명). 표기 변형까지 시도.
+
+    HTML 라우트와 API가 같은 해석 규칙을 쓰도록 공유한다 — 한쪽에만
+    변형 폴백이 있으면 같은 보드가 웹에선 열리고 API에선 404가 된다."""
+    task = find_task(conn, task_slug)
+    if not task:
+        return None, None
+    dataset = find_benchmark_dataset(conn, task, dataset_slug)
+    if dataset is None:
+        for alt in task_variants(conn, task_slug):
+            if alt == task:
+                continue
+            dataset = find_benchmark_dataset(conn, alt, dataset_slug)
+            if dataset is not None:
+                return alt, dataset
+    return task, dataset
+
+
 def find_benchmark_dataset(conn, task: str, dataset_slug: str) -> str | None:
     for b in task_benchmarks(conn, task):
         if b["slug"] == dataset_slug:
@@ -792,10 +843,12 @@ def dataset_leaderboard(conn, task: str, dataset: str) -> dict:
             m for r in rows if isinstance(r["metrics"], dict) for m in r["metrics"]
         )
         metric_names = [m for m, _ in counts.most_common(8)]
-    # 값이 하나도 없는 지표는 빈 컬럼만 만든다 — 표시 대상에서 제외
+    # 값이 하나도 없는 지표는 빈 컬럼만 만든다 — 표시 대상에서 제외.
+    # truthiness가 아니라 존재 검사여야 한다: 값 0/0.0(Error=0 등)은 유효.
     metric_names = [
         m for m in metric_names
-        if any(isinstance(r["metrics"], dict) and r["metrics"].get(m)
+        if any(isinstance(r["metrics"], dict)
+               and r["metrics"].get(m) not in (None, "")
                for r in rows)
     ]
     metric_names = metric_names[:8]
