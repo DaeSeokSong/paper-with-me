@@ -8,6 +8,9 @@ HF API로 런타임에 탐색한다.
 from __future__ import annotations
 
 import json
+import sys
+import time
+import urllib.error
 import urllib.request
 
 HF_HOST = "https://huggingface.co"
@@ -25,9 +28,31 @@ DUMPS: dict[str, str] = {
 _USER_AGENT = "paper-with-me/0.1 (+https://github.com/DaeSeokSong/paper-with-me)"
 
 
+# HF는 대용량 동시 다운로드에 간헐적으로 429/5xx를 준다 — 재시도 없이는
+# 100분짜리 빌드가 일시 장애 하나로 통째로 죽는다 (run 28730365778)
+_RETRY_STATUS = {429, 500, 502, 503, 504}
+_RETRIES = 5
+
+
+def open_with_retry(url: str, timeout: int = 120):
+    """일시 오류(429/5xx/네트워크)에 지수 백오프로 재시도하는 urlopen."""
+    for attempt in range(1, _RETRIES + 1):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+            return urllib.request.urlopen(req, timeout=timeout)
+        except (urllib.error.URLError, TimeoutError) as e:
+            code = getattr(e, "code", None)
+            if (code is not None and code not in _RETRY_STATUS) \
+                    or attempt == _RETRIES:
+                raise
+            wait = 15 * attempt
+            print(f"  일시 오류({e}) — {wait}s 후 재시도 ({attempt}/{_RETRIES - 1})",
+                  file=sys.stderr)
+            time.sleep(wait)
+
+
 def _get_json(url: str) -> object:
-    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
-    with urllib.request.urlopen(req, timeout=60) as resp:
+    with open_with_retry(url, timeout=60) as resp:
         return json.load(resp)
 
 

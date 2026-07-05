@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import shutil
 import sys
-import urllib.request
 from pathlib import Path
 
 from . import sources
@@ -17,8 +16,7 @@ def download_file(url: str, dest: Path) -> Path:
         return dest
     dest.parent.mkdir(parents=True, exist_ok=True)
     part = dest.with_suffix(dest.suffix + ".part")
-    req = urllib.request.Request(url, headers={"User-Agent": sources._USER_AGENT})
-    with urllib.request.urlopen(req, timeout=120) as resp, open(part, "wb") as out:
+    with sources.open_with_retry(url) as resp, open(part, "wb") as out:
         shutil.copyfileobj(resp, out, length=1024 * 1024)
     part.rename(dest)
     print(f"  완료: {dest} ({dest.stat().st_size:,} bytes)")
