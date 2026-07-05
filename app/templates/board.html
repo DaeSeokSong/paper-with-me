@@ -85,7 +85,7 @@
                 else 'rank-bronze' if rank == 3
                 else 'rank-top' if rank <= 10 else '' }}">
     <td class="rank"><span class="rank-badge">{{ rank }}</span></td>
-    <td><b>{{ r.model_name }}</b>
+    <td><b>{{ r.model_name or "(모델명 미상)" }}</b>
       {%- if r.get("source") == "auto" %}
       <span class="badge" title="신규 논문 초록에서 자동 추출된 결과 — 커뮤니티 검증 전">자동 추출</span>
       {%- elif r.get("source") == "contrib" %}

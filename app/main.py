@@ -317,7 +317,7 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         for rank, r in zip(ranks, board["rows"]):
             metrics = r.get("metrics") if isinstance(r.get("metrics"), dict) \
                 else {}
-            w.writerow([rank, r.get("model_name")]
+            w.writerow([rank, r.get("model_name") or ""]
                        + [metrics.get(m, "") for m in board["metric_names"]]
                        + [r.get("uses_additional_data") or "",
                           r.get("paper_title") or "",

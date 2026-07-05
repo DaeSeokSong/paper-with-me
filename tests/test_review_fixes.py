@@ -143,8 +143,20 @@ def test_string_none_metric_values_scrubbed(tmp_path):
     conn.commit()
     conn.close()
     c = TestClient(create_app(db_path))
+    # model_name이 NULL인 행도 실재한다 — 템플릿이 None을 렌더링하면 안 됨
+    conn2 = pwc_db.connect(db_path)
+    conn2.execute(
+        "INSERT INTO sota_rows (task,dataset,model_name,metrics,paper_url,"
+        "code_links) VALUES (?,?,?,?,?,?)",
+        ("Visual Place Recognition", "KITTI", None,
+         json.dumps({"Recall@1": "88.0"}), "https://x/paper/q", "[]"),
+    )
+    conn2.commit()
+    conn2.close()
+    c = TestClient(create_app(db_path))
     r = c.get("/sota/visual-place-recognition/kitti")
     assert r.status_code == 200
     assert ">None<" not in r.text
     assert "91.2" in r.text
     assert "AUC" not in r.text  # 값이 전부 정크인 컬럼은 제거
+    assert "(모델명 미상)" in r.text
