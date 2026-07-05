@@ -52,6 +52,10 @@ def build_router(get_conn) -> APIRouter:
         stub["repositories"] = stub.pop("repos")
         return stub
 
+    @router.get("/suggest", summary="검색 자동완성 (제목·태스크·데이터셋·방법론)")
+    def suggest(q: str = ""):
+        return {"results": queries.suggest(get_conn(), q)}
+
     @router.get("/search", summary="논문 검색 (제목·초록)")
     def search(q: str, page: Page = 1):
         return paginated(queries.search_papers(get_conn(), q, page), page)

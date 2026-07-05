@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import os
+import re
 import urllib.parse
 from pathlib import Path
 from typing import Annotated
@@ -36,12 +37,37 @@ TEMPLATES_DIR = Path(__file__).parent / "templates"
 Page = Annotated[int, Query(ge=1, le=100_000)]
 
 
+_MD_LINK = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)\)")
+_MD_BOLD = re.compile(r"\*\*([^*]+)\*\*")
+_MD_CODE = re.compile(r"`([^`]+)`")
+
+
+def render_markdown(text: str | None):
+    """methods/datasets 설명의 최소 마크다운 렌더링.
+
+    아카이브 설명문은 **굵게**·[링크](url)·`코드`·$수식$을 포함한다 —
+    원문 그대로 노출하면 별표·달러 기호가 깨져 보인다. HTML은 먼저
+    이스케이프하고 안전한 서브셋만 변환한다. 수식($...$)은 그대로 두어
+    MathJax가 클라이언트에서 조판한다."""
+    import html as _html
+
+    from markupsafe import Markup
+    if not text:
+        return ""
+    out = _html.escape(str(text), quote=False)
+    out = _MD_LINK.sub(r'<a href="\2" rel="noopener">\1</a>', out)
+    out = _MD_BOLD.sub(r"<b>\1</b>", out)
+    out = _MD_CODE.sub(r"<code>\1</code>", out)
+    return Markup(out)
+
+
 def create_app(db_path: Path | None = None) -> FastAPI:
     db_path = db_path or Path(os.environ.get("PWC_DB", "data/pwc.sqlite"))
     app = FastAPI(title="paper-with-me")
     templates = Jinja2Templates(directory=TEMPLATES_DIR)
     templates.env.filters["paper_slug"] = queries.paper_slug
     templates.env.filters["slugify"] = queries.slugify
+    templates.env.filters["md"] = render_markdown
     templates.env.globals["PAGE_SIZE"] = queries.PAGE_SIZE
 
     def conn():
@@ -53,7 +79,10 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     # 개발 환경 등에서는 조용히 건너뛴다.
     if db_path.exists():
         try:
-            queries._paper_url_map(queries.connect(db_path))
+            warm = queries.connect(db_path)
+            queries._paper_url_map(warm)
+            # 태그 검색용 역인덱스 — 스냅샷당 1회 구축 (meta 플래그 멱등)
+            queries.ensure_papers_tasks(warm)
         except Exception:  # noqa: BLE001 - 예열 실패가 기동을 막으면 안 됨
             pass
 
@@ -141,12 +170,17 @@ def create_app(db_path: Path | None = None) -> FastAPI:
                                else queries.paper_results(c, p["paper_url"])))
 
     @app.get("/papers", response_class=HTMLResponse)
-    def papers(request: Request, page: Page = 1):
+    def papers(request: Request, page: Page = 1, task: str = ""):
         c = conn()
-        return render(request, "papers.html", page=page,
-                      papers=queries.latest_papers(c, page),
-                      task_slugs=queries.task_slugs(c),
-                      total=queries.total_papers(c))
+        if task:
+            # 태그(task) 기준 논문 목록 — papers_tasks 역인덱스 사용
+            items, total = queries.papers_by_task(c, task, page)
+        else:
+            items, total = (queries.latest_papers(c, page),
+                            queries.total_papers(c))
+        return render(request, "papers.html", page=page, papers=items,
+                      task=task, task_slugs=queries.task_slugs(c),
+                      total=total)
 
     @app.get("/sota", response_class=HTMLResponse)
     def sota(request: Request, area: str = ""):
@@ -168,6 +202,12 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         c = conn()
         task = queries.find_task(c, task_slug)
         if not task:
+            # 리더보드는 없지만 논문 태그로는 존재하는 task → 태그 검색으로
+            tagged = queries.find_paper_task(c, task_slug)
+            if tagged:
+                return RedirectResponse(
+                    "/papers?task=" + urllib.parse.quote(tagged),
+                    status_code=302)
             return _search_fallback(task_slug)
         # 같은 slug의 task 표기 변형(대소문자 등)을 병합해 벤치마크 누락 방지
         variants = queries.task_variants(c, task_slug)

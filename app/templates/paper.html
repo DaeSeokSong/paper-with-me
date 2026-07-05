@@ -10,7 +10,7 @@
 </div>
 
 {% if paper.abstract %}
-<p class="abstract" lang="en">{{ paper.abstract }}</p>
+<p class="abstract" lang="en">{{ paper.abstract | md }}</p>
 {% elif paper.stub %}
 <p class="muted">이 논문의 초록은 아카이브 스냅샷(papers 덤프)에 포함되어 있지
 않습니다.{% if paper.url_pdf or paper.url_abs or repos %} 아래의 원문·코드
@@ -74,7 +74,7 @@
 <div class="card glossary-row">
   {% if g.in_catalog %}<a class="badge" href="/method/{{ g.slug }}">{{ g.name }}</a>
   {% else %}<span class="badge">{{ g.name }}</span>{% endif %}
-  {% if g.description %}<span class="muted" lang="en">{{ g.description }}</span>
+  {% if g.description %}<span class="muted" lang="en">{{ g.description | md }}</span>
   {% else %}<span class="muted">설명 없음</span>{% endif %}
 </div>
 {% endfor %}
@@ -93,3 +93,4 @@
 {% for p in similar %}{% include "_paper_card.html" %}{% endfor %}
 {% endif %}
 {% endblock %}
+{% block scripts %}{% include "_mathjax.html" %}{% endblock %}

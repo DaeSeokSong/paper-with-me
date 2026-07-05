@@ -7,7 +7,7 @@
   {% if dataset.homepage %}<a href="{{ dataset.homepage }}">홈페이지</a>{% endif %}
   {% if dataset.num_papers %} · 논문 {{ "{:,}".format(dataset.num_papers) }}편{% endif %}
 </p>
-{% if dataset.description %}<p>{{ dataset.description }}</p>{% endif %}
+{% if dataset.description %}<p class="abstract" lang="en">{{ dataset.description | md }}</p>{% endif %}
 {% for m in dataset.modalities %}<span class="badge">{{ m }}</span>{% endfor %}
 {% for l in dataset.languages %}<span class="badge">{{ l }}</span>{% endfor %}
 
@@ -24,3 +24,4 @@
 {% endfor %}
 {% endif %}
 {% endblock %}
+{% block scripts %}{% include "_mathjax.html" %}{% endblock %}

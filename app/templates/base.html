@@ -80,6 +80,17 @@
   header input { background: var(--input-bg); border: 1px solid var(--input-border);
                  color: var(--input-fg); border-radius: 4px; padding: 7px 10px;
                  width: 200px; max-width: 70vw; }
+  /* 검색 자동완성 드롭다운 */
+  #search-form { position: relative; }
+  #suggest-box { position: absolute; top: 100%; left: 0; z-index: 30;
+                 min-width: 280px; max-width: 90vw; background: var(--card-bg);
+                 border: 1px solid var(--border); border-radius: 6px;
+                 box-shadow: 0 4px 14px rgba(10, 20, 30, .12); overflow: hidden; }
+  #suggest-box a { display: flex; justify-content: space-between; gap: 12px;
+                   padding: 9px 12px; font-size: 13px; color: var(--fg); }
+  #suggest-box a:hover, #suggest-box a.active { background: var(--th-bg);
+                   text-decoration: none; }
+  #suggest-box .kind { color: var(--muted); font-size: 11px; flex-shrink: 0; }
   /* 원본에 없던 차별화 요소: 다크 모드 토글 (기본은 원본 라이트) */
   #theme-toggle { order: 2; margin-left: auto; background: none; border: none;
                   cursor: pointer; font-size: 17px; padding: 8px;
@@ -199,9 +210,10 @@
     <a href="/trends"{% if path.startswith("/trends") %} aria-current="page"{% endif %}>Trends</a>
     <a href="/digest"{% if path.startswith("/digest") %} aria-current="page"{% endif %}>Digest</a>
   </nav>
-  <form action="/search" method="get" role="search">
+  <form action="/search" method="get" role="search" id="search-form">
     <input type="search" name="q" placeholder="논문 검색…" aria-label="논문 검색"
-           value="{{ paper_q or '' }}">
+           autocomplete="off" value="{{ paper_q or '' }}">
+    <div id="suggest-box" hidden></div>
   </form>
   <button id="theme-toggle" type="button" aria-label="다크 모드 전환"
           title="다크 모드 전환">🌙</button>
@@ -213,6 +225,55 @@ if ("serviceWorker" in navigator) {
     .catch(function () {/* 미지원/비보안 컨텍스트는 무시 */});
 }
 (function () {
+  /* 검색 자동완성 — /api/v1/suggest (논문 제목·태스크·데이터셋·방법론) */
+  var input = document.querySelector("#search-form input");
+  var box = document.getElementById("suggest-box");
+  var timer = null, items = [], active = -1, lastQ = "";
+  function hide() { box.hidden = true; box.innerHTML = ""; items = []; active = -1; }
+  function show(results) {
+    if (!results.length) { hide(); return; }
+    box.innerHTML = "";
+    items = results.map(function (r) {
+      var a = document.createElement("a");
+      a.href = r.url;
+      var label = document.createElement("span");
+      label.textContent = r.label;
+      var kind = document.createElement("span");
+      kind.className = "kind"; kind.textContent = r.kind;
+      a.appendChild(label); a.appendChild(kind);
+      box.appendChild(a);
+      return a;
+    });
+    box.hidden = false;
+  }
+  function fetchSuggest() {
+    var q = input.value.trim();
+    if (q.length < 2 || q === lastQ) { if (q.length < 2) hide(); return; }
+    lastQ = q;
+    fetch("/api/v1/suggest?q=" + encodeURIComponent(q))
+      .then(function (r) { return r.json(); })
+      .then(function (d) { if (input.value.trim() === q) show(d.results || []); })
+      .catch(hide);
+  }
+  if (input && box) {
+    input.addEventListener("input", function () {
+      clearTimeout(timer); timer = setTimeout(fetchSuggest, 180);
+    });
+    input.addEventListener("keydown", function (e) {
+      if (box.hidden) return;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        active = (active + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+        items.forEach(function (a, i) { a.classList.toggle("active", i === active); });
+      } else if (e.key === "Enter" && active >= 0) {
+        e.preventDefault(); window.location = items[active].href;
+      } else if (e.key === "Escape") { hide(); }
+    });
+    document.addEventListener("click", function (e) {
+      if (!box.contains(e.target) && e.target !== input) hide();
+    });
+  }
+
   var btn = document.getElementById("theme-toggle");
   var root = document.documentElement;
   var meta = document.querySelector('meta[name="theme-color"]');
@@ -233,6 +294,7 @@ if ("serviceWorker" in navigator) {
   sync();
 })();
 </script>
+{% block scripts %}{% endblock %}
 <footer>
   paper-with-me is a free resource with all data licensed under
   <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC-BY-SA</a>.<br>

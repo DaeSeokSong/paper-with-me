@@ -7,7 +7,7 @@
   {% if method.introduced_year %}{{ method.introduced_year }}년 도입{% endif %}
   {% if method.num_papers %} · 논문 {{ "{:,}".format(method.num_papers) }}편에서 사용{% endif %}
 </p>
-{% if method.description %}<p>{{ method.description }}</p>{% endif %}
+{% if method.description %}<p class="abstract" lang="en">{{ method.description | md }}</p>{% endif %}
 {% if method.source_url %}
 <p>출처: <a href="{{ method.source_url }}">{{ method.source_title or method.source_url }}</a></p>
 {% endif %}
@@ -16,3 +16,4 @@
 {% endif %}
 {% for c in method.collections %}<span class="badge">{{ c.collection }}{% if c.area %} · {{ c.area }}{% endif %}</span>{% endfor %}
 {% endblock %}
+{% block scripts %}{% include "_mathjax.html" %}{% endblock %}

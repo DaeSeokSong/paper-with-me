@@ -89,10 +89,134 @@ def total_papers(conn) -> int:
     return _total_cache[key]
 
 
+# 아카이브에 '2222-12-22' 같은 오타 미래 날짜 행이 존재한다 — 최신순
+# 정렬과 날짜 앵커가 오염되지 않도록 모든 최신성 질의에 상한을 건다
+FUTURE_GUARD = "date <= date('now', '+1 day')"
+
+
+def ensure_papers_tasks(conn) -> None:
+    """태그(task) 기준 논문 검색용 역인덱스 papers_tasks를 구축한다.
+
+    papers.tasks는 JSON 배열이라 태그 필터가 576k행 전체 스캔이 된다 —
+    스냅샷당 한 번(meta 플래그로 멱등) 평탄화해 인덱스를 만든다.
+    앱 기동 예열 시 호출되므로 요청 경로에는 비용이 없다."""
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS papers_tasks (
+             task TEXT, paper_url TEXT)"""
+    )
+    total = conn.execute(
+        "SELECT COUNT(*) FROM papers WHERE tasks IS NOT NULL"
+    ).fetchone()[0]
+    flag = conn.execute(
+        "SELECT value FROM meta WHERE key = 'papers_tasks_built'"
+    ).fetchone()
+    if flag and flag[0] == str(total):
+        return
+    conn.execute("DELETE FROM papers_tasks")
+    try:
+        conn.execute(
+            """INSERT INTO papers_tasks (task, paper_url)
+               SELECT je.value, p.paper_url
+               FROM papers p, json_each(p.tasks) je
+               WHERE p.tasks IS NOT NULL AND je.value IS NOT NULL"""
+        )
+    except sqlite3.OperationalError:
+        # JSON1 미지원 환경 폴백 — 파이썬에서 평탄화
+        batch = []
+        for paper_url, tasks_json in conn.execute(
+            "SELECT paper_url, tasks FROM papers WHERE tasks IS NOT NULL"
+        ):
+            try:
+                tasks = json.loads(tasks_json)
+            except ValueError:
+                continue
+            for t in tasks if isinstance(tasks, list) else []:
+                if isinstance(t, str) and t:
+                    batch.append((t, paper_url))
+        conn.executemany(
+            "INSERT INTO papers_tasks (task, paper_url) VALUES (?, ?)", batch)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_papers_tasks ON papers_tasks(task)")
+    conn.execute(
+        "INSERT OR REPLACE INTO meta (key, value) "
+        "VALUES ('papers_tasks_built', ?)", (str(total),))
+    conn.commit()
+
+
+def papers_by_task(conn, task: str, page: int = 1) -> tuple[list[dict], int]:
+    """태그(task명) 기준 논문 목록 + 총 건수. papers_tasks 인덱스 사용."""
+    try:
+        total = conn.execute(
+            "SELECT COUNT(*) FROM papers_tasks WHERE task = ?", (task,)
+        ).fetchone()[0]
+    except sqlite3.OperationalError:  # 인덱스 미구축 (예열 전)
+        ensure_papers_tasks(conn)
+        total = conn.execute(
+            "SELECT COUNT(*) FROM papers_tasks WHERE task = ?", (task,)
+        ).fetchone()[0]
+    rows = conn.execute(
+        f"""SELECT p.* FROM papers_tasks pt
+            JOIN papers p ON p.paper_url = pt.paper_url
+            WHERE pt.task = ? AND p.date IS NOT NULL AND p.{FUTURE_GUARD}
+            ORDER BY p.date DESC LIMIT ? OFFSET ?""",
+        (task, PAGE_SIZE, (page - 1) * PAGE_SIZE),
+    ).fetchall()
+    return [_loads(r, "authors", "tasks", "methods") for r in rows], total
+
+
+def find_paper_task(conn, slug: str) -> str | None:
+    """papers.tasks에 존재하는 task명을 slug로 찾는다 (리더보드에 없는
+    태그의 목적지 — /papers?task= 로 안내)."""
+    try:
+        return _slug_map(
+            conn, "papertask",
+            "SELECT DISTINCT task FROM papers_tasks",
+        ).get(slug)
+    except sqlite3.OperationalError:  # 인덱스 미구축 (예열 전)
+        return None
+
+
+def suggest(conn, q: str, cap: int = 10) -> list[dict]:
+    """검색 자동완성 — 카탈로그(태스크·데이터셋·방법론)는 캐시 맵 prefix
+    일치로 즉답, 논문 제목은 FTS로 상위 몇 건."""
+    q = (q or "").strip()
+    qs = slugify(q)
+    out: list[dict] = []
+    if not qs:
+        return out
+    for kind, sql, prefix, label in (
+        ("task", "SELECT DISTINCT task FROM sota_rows WHERE task IS NOT NULL",
+         "/sota/", "벤치마크"),
+        ("dataset", "SELECT name FROM datasets", "/dataset/", "데이터셋"),
+        ("method", "SELECT name FROM methods", "/method/", "방법론"),
+    ):
+        m = _slug_map(conn, kind, sql)
+        hits = sorted((slug_ for slug_ in m if slug_.startswith(qs)),
+                      key=len)[:3]
+        out += [{"label": m[h], "url": prefix + h, "kind": label}
+                for h in hits]
+    if len(q) >= 3 and pwc_db.has_fts(conn):
+        try:
+            rows = conn.execute(
+                """SELECT p.title, p.paper_url FROM papers_fts f
+                   JOIN papers p ON p.rowid = f.rowid
+                   WHERE papers_fts MATCH ? ORDER BY rank LIMIT 5""",
+                (_fts_query(q),),
+            ).fetchall()
+            out += [{"label": r["title"],
+                     "url": "/paper/" + paper_slug(r["paper_url"]),
+                     "kind": "논문"}
+                    for r in rows if r["title"]]
+        except sqlite3.OperationalError:
+            pass
+    return out[:cap]
+
+
 def latest_papers(conn, page: int = 1) -> list[dict]:
     rows = conn.execute(
-        "SELECT * FROM papers WHERE date IS NOT NULL ORDER BY date DESC "
-        "LIMIT ? OFFSET ?", (PAGE_SIZE, (page - 1) * PAGE_SIZE)
+        f"SELECT * FROM papers WHERE date IS NOT NULL AND {FUTURE_GUARD} "
+        "ORDER BY date DESC LIMIT ? OFFSET ?",
+        (PAGE_SIZE, (page - 1) * PAGE_SIZE)
     ).fetchall()
     return [_loads(r, "authors", "tasks", "methods") for r in rows]
 
@@ -114,6 +238,7 @@ def trending_papers(conn, limit: int = 10) -> list[dict]:
            FROM papers p
            LEFT JOIN signals s ON s.paper_url = p.paper_url
            WHERE p.date IS NOT NULL
+             AND p.date <= date('now', '+1 day')
              AND ((s.paper_url IS NOT NULL
                    AND s.updated_at >= datetime('now', '-14 days'))
                   OR EXISTS (SELECT 1 FROM repos r WHERE r.paper_url = p.paper_url))
@@ -407,7 +532,10 @@ def weekly_digest(conn) -> dict:
                   (SELECT COUNT(*) FROM repos r WHERE r.paper_url = p.paper_url)
                   AS repo_count
            FROM papers p LEFT JOIN signals s ON s.paper_url = p.paper_url
-           WHERE p.date >= date((SELECT MAX(date) FROM papers), '-7 days')"""
+           WHERE p.date >= date((SELECT MAX(date) FROM papers
+                                 WHERE date <= date('now', '+1 day')),
+                                '-7 days')
+             AND p.date <= date('now', '+1 day')"""
     ).fetchall()
     if len(rows) < 30:
         days = 30
@@ -416,8 +544,10 @@ def weekly_digest(conn) -> dict:
                       (SELECT COUNT(*) FROM repos r
                        WHERE r.paper_url = p.paper_url) AS repo_count
                FROM papers p LEFT JOIN signals s ON s.paper_url = p.paper_url
-               WHERE p.date >= date((SELECT MAX(date) FROM papers),
-                                    '-30 days')"""
+               WHERE p.date >= date((SELECT MAX(date) FROM papers
+                                     WHERE date <= date('now', '+1 day')),
+                                    '-30 days')
+                 AND p.date <= date('now', '+1 day')"""
         ).fetchall()
     papers = [_loads(r, "authors", "tasks", "methods") for r in rows]
     papers.sort(key=lambda p: ((p.get("hf_upvotes") or 0) * 10
@@ -459,7 +589,9 @@ def rising_tasks(conn, top: int = 15) -> list[dict]:
                       COUNT(*) AS n
                FROM papers p, json_each(p.tasks) je
                WHERE p.date IS NOT NULL AND p.tasks IS NOT NULL
-                 AND p.date >= date((SELECT MAX(date) FROM papers),
+                 AND p.date <= date('now', '+1 day')
+                 AND p.date >= date((SELECT MAX(date) FROM papers
+                                     WHERE date <= date('now', '+1 day')),
                                     '-9 months')
                  AND je.value IS NOT NULL
                GROUP BY task, month"""

@@ -2,7 +2,8 @@
 {% block title %}{{ task }} · SOTA · paper-with-me{% endblock %}
 {% block content %}
 <h1>{{ task }}</h1>
-<p class="muted">{{ benchmarks | length }}개 벤치마크</p>
+<p class="muted">{{ benchmarks | length }}개 벤치마크 ·
+<a href="/papers?task={{ task | urlencode }}">이 태스크의 논문 보기 →</a></p>
 <div class="grid">
   {% for b in benchmarks %}
   <div class="card">

@@ -24,7 +24,7 @@ def client(tmp_path):
         ("https://paperswithcode.com/paper/feature-paper",
          "Contrastive Vision Transformers for Robust Recognition",
          "We study contrastive pretraining of vision transformers.",
-         "2026-09-01",
+         "2026-07-01",
          json.dumps(["Image Classification", "Ghost Task"]),
          json.dumps(["Transformer", "Unknown Method"]), "arxiv"),
     )
@@ -39,7 +39,7 @@ def client(tmp_path):
     conn.execute(
         "INSERT INTO signals (paper_url,hf_upvotes,updated_at) VALUES (?,?,?)",
         ("https://paperswithcode.com/paper/feature-paper", 42,
-         "2026-09-01T00:00:00"),
+         "2026-07-01T00:00:00"),
     )
     # 리더보드 (Image Classification만 존재) + area
     conn.execute(
@@ -56,8 +56,9 @@ def client(tmp_path):
          "A Transformer is a model architecture that relies on attention "
          "mechanisms instead of recurrence."),
     )
-    # 급상승 태스크용 월별 논문 (최근 8개월, 증가 추세)
-    for month in range(1, 9):
+    # 급상승 태스크용 월별 논문 (최근 6개월, 증가 추세 — 미래 날짜는
+    # FUTURE_GUARD에 걸러지므로 과거 월만 사용)
+    for month in range(1, 7):
         for i in range((month + 1) * 2):
             conn.execute(
                 "INSERT INTO papers (paper_url,title,date,tasks) "
