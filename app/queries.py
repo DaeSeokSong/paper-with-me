@@ -42,7 +42,11 @@ def slugify(name: str) -> str:
 
 
 def _loads(row: dict, *keys: str) -> dict:
-    out = dict(row)
+    # 아카이브 덤프에는 결측이 문자열 "None"으로 남은 컬럼이 있다(전수
+    # 크롤에서 발견: kitti 보드의 model_name — NULL 가드와 `or` 폴백을
+    # 모두 통과해 표에 'None'으로 노출). 읽기 시점에 일괄 정화해야
+    # 이미 배포된 스냅샷도 안전하다.
+    out = {k: (None if v == "None" else v) for k, v in dict(row).items()}
     for k in keys:
         # strip_nulls: parquet 스키마 통합으로 null이 채워진 기존 스냅샷도
         # 읽기 시점에 정화한다 (재빌드 전 배포본 대응)

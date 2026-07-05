@@ -62,6 +62,24 @@ def test_ingest_evaluations_flattens_subtasks(conn):
     assert metrics["Top 1 Accuracy"] == "78.57%"
 
 
+def test_ingest_evaluations_cleans_stringified_none(conn, tmp_path):
+    """덤프에 결측이 문자열 'None'으로 남은 필드는 NULL로 적재한다 —
+    문자열 'None'은 NULL 가드·truthiness 폴백을 모두 통과해 리더보드에
+    그대로 노출된다 (전수 크롤에서 발견: kitti 보드)."""
+    path = tmp_path / "eval.json"
+    path.write_text(json.dumps([{
+        "task": "T", "datasets": [{"dataset": "D", "sota": {
+            "metrics": ["Acc"],
+            "rows": [{"model_name": "None", "metrics": {"Acc": "1"},
+                      "paper_url": "None", "paper_title": "None",
+                      "paper_date": "None", "code_links": []}]}}]}]))
+    assert ingest.ingest_evaluations(conn, path) == 1
+    row = conn.execute(
+        "SELECT model_name, paper_url, paper_title, paper_date FROM sota_rows"
+    ).fetchone()
+    assert row == (None, None, None, None)
+
+
 def test_ingest_methods_and_datasets(conn):
     assert ingest.ingest_methods(conn, FIXTURES / "methods.json") == 1
     assert ingest.ingest_datasets(conn, FIXTURES / "datasets.json") == 1
