@@ -1,0 +1,59 @@
+name: Download verified snapshot
+description: >
+  검증을 통과한(성공으로 끝난 런이 올린) 최신 pwc-sqlite 아티팩트를
+  내려받는다. build-data는 100분짜리 빌드 산출물을 보존하려고 스모크
+  게이트보다 먼저 업로드하므로 '최신 아티팩트'에는 검증 실패 스냅샷이
+  섞일 수 있다 — 소비 측에서 업로드한 런의 결론(conclusion)으로 거른다.
+  (실제 사고: 실패 빌드의 papers.date 전멸 스냅샷이 최신으로 등록되어
+  deploy-hf 스모크가 중단됨)
+
+inputs:
+  dest:
+    description: 압축 해제 디렉터리
+    default: data
+  required:
+    description: "'true'면 검증된 아티팩트가 없을 때 실패"
+    default: "true"
+
+outputs:
+  found:
+    description: "'true'/'false' — 검증된 아티팩트 확보 여부"
+    value: ${{ steps.dl.outputs.found }}
+
+runs:
+  using: composite
+  steps:
+    - id: dl
+      shell: bash
+      run: |
+        pairs=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=pwc-sqlite&per_page=100" \
+                --jq '[.artifacts[] | select(.expired == false)]
+                      | sort_by(.created_at) | reverse
+                      | .[] | "\(.id) \(.workflow_run.id)"')
+        found=""
+        while read -r art run; do
+          [ -z "$art" ] && continue
+          concl=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" \
+                  --jq '.conclusion // ""' 2>/dev/null || echo "")
+          if [ "$concl" = "success" ]; then
+            found="$art"
+            break
+          fi
+          echo "skip: artifact $art (run $run conclusion='$concl' — 미검증/실패 스냅샷)"
+        done <<< "$pairs"
+        if [ -z "$found" ]; then
+          echo "found=false" >> "$GITHUB_OUTPUT"
+          if [ "${{ inputs.required }}" = "true" ]; then
+            echo "검증된 스냅샷 아티팩트가 없습니다" >&2
+            exit 1
+          fi
+          echo "검증된 스냅샷 없음 — 건너뜀"
+          exit 0
+        fi
+        echo "artifact id: $found"
+        gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$found/zip" > snapshot.zip
+        mkdir -p "${{ inputs.dest }}"
+        unzip -o snapshot.zip -d "${{ inputs.dest }}"
+        rm snapshot.zip
+        ls -lah "${{ inputs.dest }}"
+        echo "found=true" >> "$GITHUB_OUTPUT"

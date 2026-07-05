@@ -34,18 +34,12 @@ jobs:
         run: pip install -e ".[stream,web,dev]"
 
       - name: Download previous snapshot (live 수집분 이관용)
+        uses: ./.github/actions/download-snapshot
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          id=$(gh api "repos/${{ github.repository }}/actions/artifacts?name=pwc-sqlite" \
-               --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last | .id' || true)
-          if [ -n "$id" ] && [ "$id" != "null" ]; then
-            echo "previous artifact: $id"
-            gh api "repos/${{ github.repository }}/actions/artifacts/$id/zip" > prev.zip
-            mkdir -p prev && unzip -o prev.zip -d prev && rm prev.zip
-          else
-            echo "이전 스냅샷 없음 — 첫 빌드"
-          fi
+        with:
+          dest: prev
+          required: "false"
 
       - name: Download dumps and build SQLite
         run: python -m pwc build --data-dir data
@@ -65,6 +59,8 @@ jobs:
 
       # 업로드를 스모크 게이트보다 먼저 수행한다 — 스냅샷 빌드는 100분짜리
       # 작업이라, 앱 쪽 점검 실패로 산출물까지 버려지면 안 된다.
+      # 소비 워크플로들은 download-snapshot 액션이 '성공한 런의 아티팩트'만
+      # 고르므로, 스모크에 실패한 이 업로드가 하류로 흘러가지는 않는다.
       - name: Upload snapshot artifact
         uses: actions/upload-artifact@v4
         with:
