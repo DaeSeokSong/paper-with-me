@@ -18,6 +18,12 @@ permissions:
   contents: read
   actions: read
 
+# 백필 등 다른 스냅샷 기록자와 동시 실행되면 서로의 수집분을 덮어쓴다 —
+# 스냅샷 기록자끼리 직렬화한다
+concurrency:
+  group: snapshot-writers
+  cancel-in-progress: false
+
 jobs:
   update:
     runs-on: ubuntu-latest
