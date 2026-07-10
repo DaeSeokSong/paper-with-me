@@ -121,6 +121,11 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     templates.env.filters["slugify"] = queries.slugify
     templates.env.filters["md"] = render_markdown
     templates.env.globals["PAGE_SIZE"] = queries.PAGE_SIZE
+    # 리더보드 차트 x축을 현재 월까지 연장하는 데 사용 (호출 시점 평가 —
+    # 장수 프로세스에서도 날짜가 고정되지 않도록 함수로 노출)
+    import datetime as _dt
+    templates.env.globals["current_month"] = (
+        lambda: _dt.date.today().strftime("%Y-%m"))
 
     def conn():
         # SQLite 연결은 요청 스레드마다 새로 연다. DDL/마이그레이션 없는
