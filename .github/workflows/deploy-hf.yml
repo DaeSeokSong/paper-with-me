@@ -1,12 +1,15 @@
 name: Deploy to Hugging Face
 
 # 최신 데이터 스냅샷을 HF Datasets에 올리고 Docker Space를 동기화한다.
-# update-data(03:00 UTC) 이후인 04:30 UTC에 매일 실행 + 앱/배포 구성 변경 시.
+# 고정 크론(04:30)은 GitHub 크론 지연으로 수집(update-data)이 끝나기 전에
+# 돌아 라이브가 하루 이상 뒤처지는 순서 결함이 있었다 — 수집 완료 시
+# 연쇄 실행(workflow_run)으로 바꿔 '00시 수집 → 즉시 배포'를 보장한다.
 # HF_TOKEN 시크릿이 없으면 안내만 하고 정상 종료한다.
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "30 4 * * *"
+  workflow_run:
+    workflows: ["Update data (Phase 2 collectors)"]
+    types: [completed]
   push:
     branches: [main]
     paths:
@@ -29,6 +32,10 @@ concurrency:
 
 jobs:
   deploy:
+    # 연쇄 실행일 때는 수집이 성공한 경우에만 배포한다 — 실패한 수집
+    # 뒤에 배포해봤자 아티팩트 필터가 옛 스냅샷을 고르므로 낭비다
+    if: github.event_name != 'workflow_run'
+        || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 90  # 13GB 데이터 업로드 + Space 빌드/기동 대기 포함
     env:
