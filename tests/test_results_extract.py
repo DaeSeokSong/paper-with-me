@@ -25,10 +25,24 @@ ABSTRACT_NO_TASK = (
     "We propose SprayNet, a compression method. "
     "SprayNet achieves 95.00% on CIFAR-100."
 )
-# %-없는 수치는 배속·계수 오인 방지를 위해 무시 ("1.31x speedup" 등)
+# %-없는 소수는 지표 언급 인접일 때만 인정 — "1.31 speedup"은 범위
+# 검사에서, "1.31x"는 단위 접미에서 걸러지고 "accuracy of 95.5"는 통과
 ABSTRACT_NO_PERCENT = (
     "We propose SpeedNet for image classification with a 1.31 speedup "
     "on CIFAR-100 and accuracy of 95.5 without percent sign."
+)
+# 지표 언급에서 멀리 떨어진 순수 소수는 거부 (인접성 게이트)
+ABSTRACT_FAR_NUMBER = (
+    "We propose FarNet for image classification and evaluate accuracy "
+    "extensively. Training takes long. The compute budget of our largest "
+    "configuration is discussed in the appendix in detail there. "
+    "Our experiments run on CIFAR-100 with 93.5 GPU-hours in total."
+)
+# BLEU처럼 % 없이 쓰는 지표 — 지표 인접 소수로 추출
+ABSTRACT_BLEU = (
+    "We propose TransNet for machine translation. On the WMT2014 "
+    "English-German benchmark, TransNet achieves a BLEU score of 29.3, "
+    "a new state of the art."
 )
 
 
@@ -82,9 +96,45 @@ def test_rejects_out_of_range_and_no_benchmark(conn):
     assert results_extract.collect(conn) == 0  # 재실행도 0 (stateless)
 
 
-def test_rejects_unmentioned_task_and_bare_numbers(conn):
+def test_rejects_unmentioned_task(conn):
     _add_paper(conn, "spray-paper", ABSTRACT_NO_TASK)
+    assert results_extract.collect(conn) == 0
+
+
+def test_plain_decimal_needs_metric_adjacency(conn):
+    """%-없는 소수: 지표 인접이면 추출("accuracy of 95.5"), 배속(1.31)은
+    범위에서 걸러지고, 지표에서 먼 수치(GPU-hours 93.5)는 거부."""
     _add_paper(conn, "speed-paper", ABSTRACT_NO_PERCENT)
+    _add_paper(conn, "far-paper", ABSTRACT_FAR_NUMBER)
+    assert results_extract.collect(conn) == 1
+    row = conn.execute(
+        "SELECT metrics, paper_url FROM sota_rows WHERE source='auto'"
+    ).fetchone()
+    assert json.loads(row[0]) == {"Percentage correct": "95.5"}
+    assert "speed-paper" in row[1]
+
+
+def test_metric_token_signal_extracts_bleu(conn):
+    """지표명 토큰 시그널(bleu) + '{dataset} benchmark' 앵커로 추출."""
+    conn.execute(
+        "INSERT INTO sota_rows (task,dataset,model_name,metrics,paper_url,"
+        "code_links) VALUES (?,?,?,?,?,?)",
+        ("Machine Translation", "WMT2014 English-German", "BaseNet",
+         json.dumps({"BLEU score": "28.4"}), "https://x/paper/base", "[]"))
+    conn.commit()
+    _add_paper(conn, "transnet-paper", ABSTRACT_BLEU)
+    assert results_extract.collect(conn) == 1
+    row = conn.execute(
+        "SELECT task, metrics FROM sota_rows WHERE source='auto'").fetchone()
+    assert row[0] == "Machine Translation"
+    assert json.loads(row[1]) == {"BLEU score": "29.3"}
+
+
+def test_unit_suffixed_numbers_ignored(conn):
+    """'1.5x' 배속·'25.3M' 파라미터처럼 단위 접미 수치는 후보에서 제외."""
+    _add_paper(conn, "unit-paper",
+               "We propose UnitNet for image classification on CIFAR-100 "
+               "with 95.1x speedup and 25.3M params near accuracy terms.")
     assert results_extract.collect(conn) == 0
 
 
