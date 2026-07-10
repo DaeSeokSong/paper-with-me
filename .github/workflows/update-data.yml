@@ -1,11 +1,13 @@
 name: Update data (Phase 2 collectors)
 
 # 최신 스냅샷 아티팩트에 arXiv/HF/GitHub 수집분을 증분 반영해 다시 올린다.
-# 매일 03:00 UTC 자동 실행. 이 워크플로 파일이 변경돼도 실행된다(검증용).
+# 매일 00:00 UTC 자동 실행(사용자 요청 — 자정 기준 갱신). GitHub 크론은
+# 부하에 따라 수십 분~수 시간 지연될 수 있어 '00시 이후 최대한 빨리'가
+# 실제 의미다. 배포(deploy-hf)는 이 워크플로 완료 시 연쇄 실행된다.
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 3 * * *"
+    - cron: "0 0 * * *"
   push:
     branches: [main]
     paths:
