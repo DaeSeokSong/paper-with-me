@@ -62,7 +62,8 @@ def upload_data(api, data_repo: str) -> bool:
         return False
     print(f"[deploy] 데이터 업로드 → {data_repo} ({db.stat().st_size:,} bytes)",
           flush=True)
-    api.create_repo(data_repo, repo_type="dataset", exist_ok=True)
+    if not api.repo_exists(data_repo, repo_type="dataset"):
+        api.create_repo(data_repo, repo_type="dataset", exist_ok=True)
     with tempfile.TemporaryDirectory() as td:
         readme = Path(td) / "README.md"
         readme.write_text(DATA_README, encoding="utf-8")
@@ -83,8 +84,14 @@ def upload_data(api, data_repo: str) -> bool:
 
 def sync_space(api, space_repo: str, data_repo: str) -> None:
     print(f"[deploy] Space 동기화 → {space_repo} (단일 커밋)", flush=True)
-    api.create_repo(space_repo, repo_type="space", space_sdk="docker",
-                    exist_ok=True)
+    # HF가 2026-07-08부터 무료 계정의 Docker Space '생성'을 402로 거부한다.
+    # exist_ok=True여도 생성 API를 먼저 때리므로, 이미 존재하는 Space는
+    # 생성 호출 자체를 건너뛰어야 기존 Space 운영이 계속된다.
+    if api.repo_exists(space_repo, repo_type="space"):
+        print("[deploy] Space 이미 존재 — 생성 건너뜀", flush=True)
+    else:
+        api.create_repo(space_repo, repo_type="space", space_sdk="docker",
+                        exist_ok=True)
     with tempfile.TemporaryDirectory() as td:
         staging = Path(td)
         (staging / "README.md").write_text(SPACE_README, encoding="utf-8")
