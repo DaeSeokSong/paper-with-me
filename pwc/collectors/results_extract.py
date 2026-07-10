@@ -4,9 +4,13 @@
 커뮤니티가 검수하는 방식으로 리더보드를 만들었다. 2025-07 원본 종료 후
 권위 있는 SOTA 소스가 없으므로, 보수적인 휴리스틱으로 리더보드를 이어간다:
 
-- "on {기존 벤치마크 dataset}" 문맥이 있는 초록만 대상
-- 지표는 해당 보드에 이미 존재하는 지표 이름과 매칭될 때만
-- 수치는 해당 지표의 기존 값 범위(±약간의 여유) 안일 때만
+- "on {기존 벤치마크 dataset}" 또는 "{dataset} benchmark/dataset" 문맥이
+  있는 초록만 대상 (+ task 이름이 본문에 실제 언급된 보드만)
+- 지표는 해당 보드에 이미 존재하는 지표 이름과 매칭될 때만 — 정확 명칭
+  우선, 지표명 토큰 시그널(bleu/miou/f1/psnr 등) 폴백
+- 수치는 % 표기이거나, %-없는 소수는 지표 언급과 80자 이내 인접일 때만
+  ("1.31x speedup" 같은 배속·계수 오인 방지)
+- 수치는 해당 지표의 기존 값 범위(±분포 폭의 절반) 안일 때만
 - 추가된 행은 source='auto'로 표시 — UI에서 "자동 추출" 배지로 구분
 
 이 게이트를 전부 통과하지 못하면 조용히 버린다 (누락이 오염보다 낫다).
@@ -28,7 +32,16 @@ _MODEL_RE = re.compile(
     r"dub(?:bed)?)\s+(?:a\s|an\s|the\s|novel\s)*"
     r"([A-Z][A-Za-z0-9+_.\-]{1,29})")
 _MODEL_STOP = {"We", "Our", "In", "This", "The", "A", "An", "It", "To"}
-_PERCENT_RE = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*%")
+# % 수치, 또는 단위 접미(x/×/M/B 등) 없는 순수 소수 — 정수는 연도·개수
+# 오인이 잦아 소수점 필수
+_NUM_RE = re.compile(
+    r"(?P<pct>\d{1,3}(?:\.\d+)?)\s*%"
+    r"|(?<![A-Za-z\d.%])(?P<plain>\d{1,3}\.\d+)(?![A-Za-z\d%×])")
+# %-없는 수치가 유효하려면 지표 언급과 이 거리(문자) 안에 있어야 한다
+METRIC_ADJACENCY = 80
+# 지표명 토큰 시그널에서 제외할 일반어 (단독으로는 지표를 특정 못 함)
+_TOKEN_STOP = {"score", "mean", "average", "overall", "test", "val",
+               "set", "number", "metric", "the", "of"}
 
 
 def _norm(s: str) -> str:
@@ -80,17 +93,42 @@ def _model_name(title: str, abstract: str) -> str:
     return (title or "")[:40]
 
 
-def _match_metric(board_metrics: dict, window_norm: str) -> str | None:
-    """창 안에서 언급된 보드 지표를 찾는다. 정확 명칭 우선, 정확도 계열은
-    'accuracy' 언급으로 폴백."""
+def _metric_signals(name: str) -> list[str]:
+    """지표명에서 지표를 특정할 수 있는 토큰들 (bleu, miou, f1, psnr …)."""
+    toks = [t for t in _norm(name).split()
+            if len(t) >= 2 and not t.isdigit() and t not in _TOKEN_STOP]
+    return toks
+
+
+def _find_all(pattern: str, window_lower: str) -> list[int]:
+    return [m.start() for m in re.finditer(pattern, window_lower)]
+
+
+def _match_metric(board_metrics: dict,
+                  window_lower: str) -> tuple[str | None, list[int]]:
+    """창 안에서 언급된 보드 지표와 그 언급 위치들을 찾는다.
+
+    정확 명칭(구분자 유연) 우선 → 지표명 토큰 시그널 → 정확도 계열의
+    'accuracy' 언급 폴백. 위치는 %-없는 수치의 인접성 검사에 쓴다.
+    """
     for name in board_metrics:
-        if _norm(name) and _norm(name) in window_norm:
-            return name
-    if "accuracy" in window_norm:
+        toks = _norm(name).split()
+        if not toks:
+            continue
+        pat = r"\b" + r"[^a-z0-9]{1,3}".join(map(re.escape, toks)) + r"\b"
+        pos = _find_all(pat, window_lower)
+        if pos:
+            return name, pos
+    for name in board_metrics:
+        for tok in _metric_signals(name):
+            pos = _find_all(r"\b" + re.escape(tok) + r"\b", window_lower)
+            if pos:
+                return name, pos
+    if "accuracy" in window_lower:
         for name in board_metrics:
             if re.search(r"accuracy|percentage correct|top 1", name, re.I):
-                return name
-    return None
+                return name, _find_all(r"\baccuracy\b", window_lower)
+    return None, []
 
 
 def _sane(value: float, existing: list[float]) -> bool:
@@ -118,7 +156,8 @@ def extract_from_text(title: str, abstract: str, index: dict) -> list[dict]:
     - 데이터셋 언급 하나로 그 데이터셋의 모든 task 보드에 살포되는 문제
       → task 이름이 본문에 실제로 언급된 보드만 대상
     - "1.31×" 같은 배속·계수를 정확도로 오인하는 문제
-      → % 표기가 붙은 수치만 인정
+      → % 표기 수치, 또는 지표 언급과 80자 이내 인접한 순수 소수만 인정
+        (단위 접미 x/×/M/B가 붙은 수치와 정수는 제외)
     """
     text = f"{title or ''}. {abstract or ''}"
     lower = text.lower()
@@ -128,28 +167,39 @@ def extract_from_text(title: str, abstract: str, index: dict) -> list[dict]:
     for ds_lower, boards in index.items():
         if ds_lower not in lower:
             continue  # 빠른 사전 필터
-        for m in re.finditer(
-                rf"\bon (?:the )?{re.escape(ds_lower)}\b", lower):
+        ds = re.escape(ds_lower)
+        anchor = (rf"\bon (?:the )?{ds}\b"
+                  rf"|\b{ds}[^a-z0-9]{{1,3}}(?:benchmark|dataset|"
+                  rf"leaderboard|test set|val(?:idation)? set)\b")
+        for m in re.finditer(anchor, lower):
             start = max(0, m.start() - WINDOW)
             window = text[start:m.end() + WINDOW]
-            window_norm = _norm(window)
-            # % 표기 수치만, 데이터셋 언급에 가까운 순
-            nums = [(abs((start + x.start()) - m.start()), x.group(1))
-                    for x in _PERCENT_RE.finditer(window)]
+            window_lower = window.lower()
+            # 수치 후보: (데이터셋 언급까지 거리, 창 내 위치, 값, % 여부)
+            nums = []
+            for x in _NUM_RE.finditer(window_lower):
+                raw = x.group("pct") or x.group("plain")
+                nums.append((abs((start + x.start()) - m.start()),
+                             x.start(), raw, bool(x.group("pct"))))
             nums.sort()
             for board in boards:
                 # 논문이 그 task를 다룬다고 밝힌 보드만 — 데이터셋 살포 방지
                 if _norm(board["task"]) not in text_norm:
                     continue
-                metric = _match_metric(board["metrics"], window_norm)
+                metric, mentions = _match_metric(board["metrics"],
+                                                 window_lower)
                 if not metric:
                     continue
                 key = (board["task"], board["dataset"], metric)
                 if key in seen:
                     continue
-                for _, raw in nums:
-                    value = float(raw)
-                    if _sane(value, board["metrics"][metric]):
+                for _, pos, raw, is_pct in nums:
+                    # %-없는 수치는 지표 언급 인접일 때만 (배속·계수 차단)
+                    if not is_pct and not any(
+                            abs(pos - mp) <= METRIC_ADJACENCY
+                            for mp in mentions):
+                        continue
+                    if _sane(float(raw), board["metrics"][metric]):
                         seen.add(key)
                         out.append({"task": board["task"],
                                     "dataset": board["dataset"],
