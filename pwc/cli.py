@@ -116,6 +116,28 @@ def cmd_collect(args: argparse.Namespace) -> int:
     return 1 if failures == len(args.source) else 0
 
 
+def cmd_backfill(args: argparse.Namespace) -> int:
+    """아카이브 종료 이후 ~ 일일 수집 가동 전의 논문 공백을 채운다.
+
+    수집 후 확대된 논문 풀 전체를 대상으로 자동 태깅·결과 추출을
+    재실행한다 (둘 다 멱등)."""
+    from .collectors import arxiv, auto_tag, results_extract
+
+    conn = db.connect(args.data_dir / "pwc.sqlite")
+    added = arxiv.backfill(conn, args.start, args.end, args.window_days)
+    print(f"[backfill] 신규 논문 {added:,}편", flush=True)
+    total_new = conn.execute(
+        "SELECT COUNT(*) FROM papers WHERE source != 'archive'"
+    ).fetchone()[0]
+    auto_tag.collect(conn, max_papers=max(total_new, 2000))
+    results_extract.collect(conn)
+    synced = db.sync_fts(conn)
+    if synced:
+        print(f"FTS 증분 동기화: {synced:,}편", flush=True)
+    conn.close()
+    return 0
+
+
 def cmd_stats(args: argparse.Namespace) -> int:
     db_path = args.data_dir / "pwc.sqlite"
     if not db_path.exists():
@@ -147,6 +169,7 @@ def main(argv: list[str] | None = None) -> int:
         ("ingest", "덤프를 SQLite로 적재", cmd_ingest, True),
         ("build", "download + ingest", cmd_build, True),
         ("collect", "신규 데이터 수집 (arXiv/HF/GitHub)", cmd_collect, False),
+        ("backfill", "아카이브 이후 공백 기간 논문 수집", cmd_backfill, False),
         ("stats", "적재 결과 요약", cmd_stats, False),
     ]
     for name, help_text, func, has_only in commands:
@@ -168,6 +191,14 @@ def main(argv: list[str] | None = None) -> int:
                            help="arXiv 최대 수집 편수")
             p.add_argument("--max-papers", type=int, default=25,
                            help="GitHub 링크 검색 대상 논문 수")
+        if name == "backfill":
+            import datetime as _dt
+            p.add_argument("--start", default="2025-07-01",
+                           help="시작일 (기본: 아카이브 종료 시점)")
+            p.add_argument("--end", default=_dt.date.today().isoformat(),
+                           help="종료일 (기본: 오늘)")
+            p.add_argument("--window-days", type=int, default=14,
+                           help="arXiv 질의 창 크기 (페이지네이션 상한 대비)")
         p.set_defaults(func=func)
 
     args = parser.parse_args(argv)

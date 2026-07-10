@@ -35,17 +35,34 @@ def _vocabulary(conn: sqlite3.Connection) -> list[str]:
     return names
 
 
-def tag_text(title: str, abstract: str, vocab: list[str]) -> list[str]:
+def _matcher(vocab: list[str]) -> re.Pattern:
+    """어휘 전체를 하나의 교대 정규식으로 결합 — 논문당 단일 스캔.
+
+    이름별 개별 re.search(어휘 ~1,600종 × 논문 수)는 백필처럼 수십만
+    편을 일괄 태깅할 때 시간이 폭발한다. 교대는 길이순(구체명 우선)
+    정렬된 vocab 순서를 그대로 써서 같은 위치에서 긴 이름이 이긴다."""
+    pat = "|".join(re.escape(n.lower()) for n in vocab) or r"(?!x)x"
+    return re.compile(rf"\b(?:{pat})\b")
+
+
+def tag_text(title: str, abstract: str, vocab: list[str],
+             matcher: re.Pattern | None = None) -> list[str]:
     text = f"{title or ''} {abstract or ''}".lower()
+    if matcher is None:
+        matcher = _matcher(vocab)
+    found = {m.group(0) for m in matcher.finditer(text)}
+    if not found:
+        return []
+    canon = {n.lower(): n for n in vocab}
     tags: list[str] = []
-    for name in vocab:
+    # 길고 구체적인 이름 우선, 그 부분 문자열인 일반명은 제외 (기존 의미)
+    for low in sorted(found, key=len, reverse=True):
+        name = canon.get(low)
+        if name is None or any(low in t.lower() for t in tags):
+            continue
+        tags.append(name)
         if len(tags) >= MAX_TAGS:
             break
-        if re.search(rf"\b{re.escape(name.lower())}\b", text):
-            # 이미 잡힌 더 구체적인 태그의 부분 문자열이면 건너뛴다
-            if any(name.lower() in t.lower() for t in tags):
-                continue
-            tags.append(name)
     return tags
 
 
@@ -62,9 +79,10 @@ def collect(conn: sqlite3.Connection, max_papers: int = 2000) -> int:
         print("[tags] 태깅 대상 없음", flush=True)
         return 0
     vocab = _vocabulary(conn)
+    matcher = _matcher(vocab)
     tagged = 0
     for paper_url, title, abstract in papers:
-        tags = tag_text(title, abstract, vocab)
+        tags = tag_text(title, abstract, vocab, matcher)
         if not tags:
             continue
         conn.execute(

@@ -5,20 +5,29 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import time
 import urllib.parse
-import urllib.request
 import xml.etree.ElementTree as ET
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+
+from .. import sources
 
 API = "https://export.arxiv.org/api/query"
 CATEGORIES = ["cs.LG", "cs.CV", "cs.CL", "cs.AI", "cs.NE", "cs.RO", "stat.ML"]
 ATOM = "{http://www.w3.org/2005/Atom}"
+# arXiv API의 실질 페이지네이션 상한 — 이보다 큰 범위는 창을 쪼갠다
+PAGE_LIMIT = 30_000
 
 PAPER_URL_PREFIX = "https://paperswithcode.com/paper/"
 
 
 def slugify(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-")
+
+
+def _fetch(url: str) -> list[dict]:
+    with sources.open_with_retry(url, timeout=120) as resp:
+        return parse_feed(resp.read())
 
 
 def fetch_recent(max_results: int = 500) -> list[dict]:
@@ -31,9 +40,57 @@ def fetch_recent(max_results: int = 500) -> list[dict]:
     url = (f"{API}?search_query={urllib.parse.quote(query)}"
            f"&sortBy=lastUpdatedDate&sortOrder=descending"
            f"&start=0&max_results={max_results}")
-    req = urllib.request.Request(url, headers={"User-Agent": "paper-with-me/0.1"})
-    with urllib.request.urlopen(req, timeout=120) as resp:
-        return parse_feed(resp.read())
+    return _fetch(url)
+
+
+def fetch_window(start: str, end: str, page_size: int = 1000,
+                 delay: float = 3.0) -> Iterator[list[dict]]:
+    """제출일 [start, end] 범위(YYYYMMDDHHMM)를 페이지 단위로 순회한다.
+
+    arXiv API 예절(요청 간 3초)과 페이지네이션 상한을 지킨다 — 상한을
+    넘길 만큼 큰 범위는 호출측(backfill)이 창을 쪼개 부른다."""
+    cats = " OR ".join(f"cat:{c}" for c in CATEGORIES)
+    query = f"({cats}) AND submittedDate:[{start} TO {end}]"
+    offset = 0
+    while offset <= PAGE_LIMIT:
+        url = (f"{API}?search_query={urllib.parse.quote(query)}"
+               f"&sortBy=submittedDate&sortOrder=ascending"
+               f"&start={offset}&max_results={page_size}")
+        papers = _fetch(url)
+        if not papers:
+            return
+        yield papers
+        if len(papers) < page_size:
+            return
+        offset += page_size
+        time.sleep(delay)
+
+
+def backfill(conn: sqlite3.Connection, start_date: str, end_date: str,
+             window_days: int = 14) -> int:
+    """아카이브 종료(2025-07)와 일일 수집 시작 사이의 공백 기간을 채운다.
+
+    일일 수집(fetch_recent)은 최근 논문만 가져오므로, 아카이브 이후
+    수집 가동 전까지의 논문(약 1년치)은 이 백필 없이는 영구 공백이다 —
+    'CIFAR-100을 쓴 2025-08~2026-06 논문이 하나도 없어 보이는' 원인.
+    upsert가 arxiv_id 기준 멱등이라 재실행·기간 중복에 안전하다.
+    """
+    import datetime as dt
+
+    cur = dt.date.fromisoformat(start_date)
+    end = dt.date.fromisoformat(end_date)
+    total = 0
+    while cur <= end:
+        win_end = min(cur + dt.timedelta(days=window_days - 1), end)
+        received = 0
+        for page in fetch_window(cur.strftime("%Y%m%d") + "0000",
+                                 win_end.strftime("%Y%m%d") + "2359"):
+            received += len(page)
+            total += upsert_papers(conn, page, source="arxiv")
+        print(f"[backfill] {cur} ~ {win_end}: 수신 {received:,}편 "
+              f"(누적 신규 {total:,})", flush=True)
+        cur = win_end + dt.timedelta(days=1)
+    return total
 
 
 def parse_feed(data: bytes) -> list[dict]:
