@@ -52,7 +52,8 @@
       <title>{{ p.model }} — {{ p.value }} ({{ p.date }})</title>
     </circle>
   {% endfor %}
-  <polyline points="{{ pts | join(' ') }}" fill="none" stroke="#21ccc7" stroke-width="2"/>
+  <polyline class="frontier-line" pathLength="1" points="{{ pts | join(' ') }}"
+            fill="none" stroke="#21ccc7" stroke-width="2"/>
   {% for p in chart.frontier %}
     {% set px = 88 + 892 * (((p.date[:4] | int) * 372 + (p.date[5:7] | int) * 31 + (p.date[8:10] | int(0)))
                  - ((dmin[:4] | int) * 372 + (dmin[5:7] | int) * 31 + (dmin[8:10] | int(0)))) / span_days %}
@@ -73,11 +74,15 @@
 <table>
   {% set has_extra = rows | selectattr("uses_additional_data", "defined")
                           | selectattr("uses_additional_data") | list %}
+  {# 원본 리더보드의 Tags 컬럼 — 행별 방법 태그 (있는 보드에서만) #}
+  {% set has_tags = rows | selectattr("tags", "defined")
+                        | selectattr("tags") | list %}
   <tr>
     <th class="rank">Rank</th><th>Model</th>
     {% for m in board.metric_names %}<th>{{ m }}</th>{% endfor %}
     {% if has_extra %}<th>Extra Training Data</th>{% endif %}
     <th>Paper</th><th>Code</th><th>Year</th>
+    {% if has_tags %}<th>Tags</th>{% endif %}
   </tr>
   {% for r in rows %}
   {% set rank = ranks[loop.index0] if ranks else offset + loop.index %}
@@ -112,6 +117,11 @@
       {%- endif -%}
     </td>
     <td class="muted">{{ (r.paper_date or "")[:4] }}</td>
+    {% if has_tags %}<td>
+      {%- for t in (r.tags if r.tags is sequence and r.tags is not string else []) -%}
+        {%- if t is string and t -%}<span class="badge">{{ t }}</span>{%- endif -%}
+      {%- endfor -%}
+    </td>{% endif %}
   </tr>
   {% endfor %}
 </table>

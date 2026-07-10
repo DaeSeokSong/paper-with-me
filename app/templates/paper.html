@@ -64,12 +64,17 @@
 <h2>Results from the Paper</h2>
 <div class="table-wrap">
 <table>
-  <tr><th>Task</th><th>Dataset</th><th>Model</th><th>Metrics</th></tr>
+  <tr><th>Rank</th><th>Task</th><th>Dataset</th><th>Model</th><th>Metrics</th></tr>
   {% for r in results %}
+  {% set rk = result_ranks[loop.index0] if result_ranks is defined and result_ranks else None %}
   <tr>
+    {#- 원본 논문 페이지의 'Ranked #N' 배지 — 보드 내 현재 순위 -#}
+    <td>{% if rk %}<a class="ranked-badge{{ ' top' if rk <= 3 }}"
+        href="/sota/{{ r.task | slugify }}/{{ r.dataset | slugify }}"
+        title="{{ r.dataset }} 리더보드 {{ rk }}위">#{{ rk }}</a>{% endif %}</td>
     <td><a href="/task/{{ r.task | slugify }}">{{ r.task }}</a></td>
     <td>{% if r.dataset %}<a href="/sota/{{ r.task | slugify }}/{{ r.dataset | slugify }}">{{ r.dataset }}</a>{% endif %}</td>
-    <td>{{ r.model_name }}</td>
+    <td>{{ r.model_name or "" }}</td>
     <td>{% if r.metrics is mapping %}{% for k, v in r.metrics.items() %}{{ k }}: {{ v }}{% if not loop.last %} · {% endif %}{% endfor %}{% endif %}</td>
   </tr>
   {% endfor %}

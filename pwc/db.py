@@ -125,6 +125,9 @@ MIGRATIONS = [
     # (제거됨) result_extract_log — 자동 추출이 stateless 재계산으로 바뀌어
     # 시도 로그가 필요 없어졌다. 남아 있는 구 스냅샷의 테이블은 무해하다.
     "DROP TABLE IF EXISTS result_extract_log",
+    # 원본 리더보드의 Tags 컬럼 — 행별 방법 태그 (evaluation-tables
+    # rows[].tags, 동등성 잔여 격차 항목)
+    "ALTER TABLE sota_rows ADD COLUMN tags TEXT",
 ]
 
 FTS_SCHEMA = """

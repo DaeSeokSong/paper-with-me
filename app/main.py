@@ -233,6 +233,8 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         # 검색으로 떨어지는 죽은 길을 만들지 않는다
         linkable = {t for t in p["tasks"]
                     if queries.find_task(c, queries.slugify(t))}
+        results = (p.get("results") if p.get("stub")
+                   else queries.paper_results(c, p["paper_url"]))
         return render(request, "paper.html", paper=p,
                       linkable_tasks=linkable,
                       similar=queries.similar_papers(c, p),
@@ -241,9 +243,9 @@ def create_app(db_path: Path | None = None) -> FastAPI:
                       repos=(p.get("repos")
                              if p.get("stub")
                              else queries.paper_repos(c, p["paper_url"])),
-                      results=(p.get("results")
-                               if p.get("stub")
-                               else queries.paper_results(c, p["paper_url"])))
+                      results=results,
+                      # 원본 논문 페이지의 'Ranked #N' 배지
+                      result_ranks=queries.paper_result_ranks(c, results))
 
     @app.get("/papers", response_class=HTMLResponse)
     def papers(request: Request, page: Page = 1, task: str = ""):
@@ -287,8 +289,13 @@ def create_app(db_path: Path | None = None) -> FastAPI:
             return _search_fallback(task_slug)
         # 같은 slug의 task 표기 변형(대소문자 등)을 병합해 벤치마크 누락 방지
         variants = queries.task_variants(c, task_slug)
+        # 원본 task 페이지의 Papers 목록·Most implemented 섹션 재현
+        recent, total = queries.papers_by_task(c, task, 1)
         return render(request, "task.html", task=task, task_slug=task_slug,
-                      benchmarks=queries.task_benchmarks(c, task, variants))
+                      benchmarks=queries.task_benchmarks(c, task, variants),
+                      recent_papers=recent[:6], total_papers=total,
+                      most_implemented=queries.most_implemented(c, task),
+                      task_slugs=queries.task_slugs(c))
 
     # 원본 사이트의 /task/{slug} URL 호환 — 중복 콘텐츠를 피하기 위해
     # 정규 URL(/sota/{slug})로 리다이렉트한다
@@ -362,10 +369,14 @@ def create_app(db_path: Path | None = None) -> FastAPI:
                           queries.get_dataset(c, dataset_slug)))
 
     @app.get("/datasets", response_class=HTMLResponse)
-    def datasets(request: Request, q: str = "", page: Page = 1):
+    def datasets(request: Request, q: str = "", page: Page = 1,
+                 mod: str = "", lang: str = ""):
+        # 원본 /datasets의 좌측 필터 패널 (모달리티/언어) 재현
         c = conn()
         return render(request, "datasets.html", q=q, page=page,
-                      datasets=queries.list_datasets(c, q, page))
+                      mod=mod, lang=lang,
+                      facets=queries.dataset_facets(c, q),
+                      datasets=queries.list_datasets(c, q, page, mod, lang))
 
     @app.get("/dataset/{slug}", response_class=HTMLResponse)
     def dataset(request: Request, slug: str):
@@ -378,10 +389,13 @@ def create_app(db_path: Path | None = None) -> FastAPI:
                           c, d["name"], d.get("variants")))
 
     @app.get("/methods", response_class=HTMLResponse)
-    def methods(request: Request, q: str = "", page: Page = 1):
+    def methods(request: Request, q: str = "", page: Page = 1,
+                col: str = ""):
+        # 원본 Methods 인덱스의 카테고리(컬렉션) 탐색 재현
         c = conn()
-        return render(request, "methods.html", q=q, page=page,
-                      methods=queries.list_methods(c, q, page))
+        return render(request, "methods.html", q=q, page=page, col=col,
+                      collections=queries.method_collections(c),
+                      methods=queries.list_methods(c, q, page, col))
 
     @app.get("/method/{slug}", response_class=HTMLResponse)
     def method(request: Request, slug: str):

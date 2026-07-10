@@ -2,16 +2,42 @@
 {% block title %}{{ task }} · SOTA · paper-with-me{% endblock %}
 {% block content %}
 <h1>{{ task }}</h1>
-<p class="muted">{{ benchmarks | length }}개 벤치마크 ·
+<p class="muted">{{ benchmarks | length }}개 벤치마크
+{%- if total_papers %} · 논문 {{ "{:,}".format(total_papers) }}편{% endif %} ·
 <a href="/papers?task={{ task | urlencode }}">이 태스크의 논문 보기 →</a></p>
+
+<h2 class="area-title">Benchmarks</h2>
 <div class="grid">
   {% for b in benchmarks %}
   <div class="card">
-    <h2 lang="en"><a href="/sota/{{ task_slug }}/{{ b.slug }}">{{ b.dataset }}</a></h2>
+    <h3 lang="en"><a href="/sota/{{ task_slug }}/{{ b.slug }}">{{ b.dataset }}</a></h3>
     <div class="muted">결과 {{ b.n_rows }}개</div>
   </div>
   {% else %}<p>벤치마크가 없습니다.
     <a href="/sota">전체 task 목록으로</a> ·
     <a href="/search?q={{ task | urlencode }}">“{{ task }}” 논문 검색</a></p>{% endfor %}
 </div>
+
+{# 원본 task 페이지의 'Most implemented papers' — 구현 저장소가 많은 순 #}
+{% if most_implemented %}
+<h2 class="area-title">Most implemented</h2>
+<div class="grid">
+  {% for p in most_implemented %}
+  <div class="card">
+    <h3 lang="en"><a href="/paper/{{ p.paper_url | paper_slug }}">{{ p.title }}</a></h3>
+    <div class="muted">{{ (p.date or "")[:10] }} · 구현 {{ p.n_repos }}개</div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{# 원본 task 페이지의 Papers 목록 (최신순 일부 + 전체 링크) #}
+{% if recent_papers %}
+<h2 class="area-title">Papers</h2>
+{% for p in recent_papers %}{% include "_paper_card.html" %}{% endfor %}
+{% if total_papers > recent_papers | length %}
+<p><a class="see-all" href="/papers?task={{ task | urlencode }}">
+  전체 {{ "{:,}".format(total_papers) }}편 보기 →</a></p>
+{% endif %}
+{% endif %}
 {% endblock %}

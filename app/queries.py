@@ -419,6 +419,24 @@ def paper_results(conn, paper_url: str) -> list[dict]:
     return [_loads(r, "metrics", "code_links") for r in rows]
 
 
+def paper_result_ranks(conn, results: list[dict],
+                       max_boards: int = 8) -> list[int | None]:
+    """논문의 각 벤치마크 결과가 보드에서 몇 위인지 — 원본 논문 페이지의
+    'Ranked #N' 배지 재현. 보드 로드 비용이 있어 앞쪽 일부만 계산한다."""
+    ranks: list[int | None] = []
+    for r in results:
+        if len(ranks) >= max_boards or not (r.get("task") and r.get("dataset")):
+            ranks.append(None)
+            continue
+        board = dataset_leaderboard(conn, r["task"], r["dataset"])
+        primary = board["metric_names"][0] if board["metric_names"] else None
+        board_rank = board_ranks(board["rows"], primary)
+        rank = next((rk for row, rk in zip(board["rows"], board_rank)
+                     if row.get("id") == r.get("id")), None)
+        ranks.append(rank)
+    return ranks
+
+
 def search_papers(conn, q: str, page: int = 1) -> list[dict]:
     offset = (page - 1) * PAGE_SIZE
     if pwc_db.has_fts(conn):
@@ -842,7 +860,7 @@ def dataset_leaderboard(conn, task: str, dataset: str) -> dict:
         "SELECT * FROM sota_rows WHERE task = ? AND dataset = ? ORDER BY id",
         (task, dataset),
     ):
-        row = _loads(r, "metrics", "code_links")
+        row = _loads(r, "metrics", "code_links", "tags")
         if not metric_names and row.get("metrics_order"):
             order = strip_nulls(json.loads(row["metrics_order"]))
             if isinstance(order, list):
@@ -937,15 +955,58 @@ def board_chart(rows: list[dict], metric: str | None) -> dict | None:
 
 # ------------------------------------------------------- datasets/methods
 
-def list_datasets(conn, q: str = "", page: int = 1) -> list[dict]:
+def _dataset_filter_sql(modality: str, language: str) -> tuple[str, list]:
+    """모달리티/언어 필터 조건 — 원본 /datasets 좌측 필터 패널 재현."""
+    sql, params = "", []
+    for col, val in (("modalities", modality), ("languages", language)):
+        if val:
+            sql += (f" AND d.{col} IS NOT NULL AND json_valid(d.{col})"
+                    f" AND EXISTS (SELECT 1 FROM json_each(d.{col}) je"
+                    f"             WHERE je.value = ?)")
+            params.append(val)
+    return sql, params
+
+
+def list_datasets(conn, q: str = "", page: int = 1,
+                  modality: str = "", language: str = "") -> list[dict]:
     pattern = f"%{_like(q)}%"
+    extra, extra_params = _dataset_filter_sql(modality, language)
     rows = conn.execute(
-        """SELECT * FROM datasets
-           WHERE name LIKE ? ESCAPE '\\' OR full_name LIKE ? ESCAPE '\\'
+        f"""SELECT * FROM datasets d
+           WHERE (name LIKE ? ESCAPE '\\' OR full_name LIKE ? ESCAPE '\\')
+           {extra}
            ORDER BY num_papers DESC, url LIMIT ? OFFSET ?""",
-        (pattern, pattern, PAGE_SIZE, (page - 1) * PAGE_SIZE),
+        (pattern, pattern, *extra_params,
+         PAGE_SIZE, (page - 1) * PAGE_SIZE),
     ).fetchall()
     return [_loads(r, "modalities", "languages") for r in rows]
+
+
+_facets_cache: dict[tuple, dict] = {}
+
+
+def dataset_facets(conn, q: str = "") -> dict[str, list[dict]]:
+    """모달리티/언어별 데이터셋 수 — 필터 패널의 항목·건수.
+    검색어가 없는 기본 화면이 대부분이므로 스냅샷 단위로 캐시한다."""
+    key = (_db_key(conn), q)
+    if key in _facets_cache:
+        return _facets_cache[key]
+    pattern = f"%{_like(q)}%"
+    out: dict[str, list[dict]] = {}
+    for name, col in (("modalities", "modalities"), ("languages", "languages")):
+        rows = conn.execute(
+            f"""SELECT je.value AS value, COUNT(*) AS n
+               FROM datasets d, json_each(d.{col}) je
+               WHERE (d.name LIKE ? ESCAPE '\\' OR d.full_name LIKE ? ESCAPE '\\')
+                 AND d.{col} IS NOT NULL AND json_valid(d.{col})
+                 AND je.value IS NOT NULL
+               GROUP BY je.value ORDER BY n DESC, je.value LIMIT 14""",
+            (pattern, pattern),
+        ).fetchall()
+        out[name] = [dict(r) for r in rows]
+    _facets_cache.clear()
+    _facets_cache[key] = out
+    return out
 
 
 def get_dataset(conn, slug: str) -> dict | None:
@@ -976,15 +1037,64 @@ def dataset_leaderboards(conn, dataset_name: str,
                        "dataset_slug": slugify(r["dataset"])} for r in rows]
 
 
-def list_methods(conn, q: str = "", page: int = 1) -> list[dict]:
+def list_methods(conn, q: str = "", page: int = 1,
+                 collection: str = "") -> list[dict]:
     pattern = f"%{_like(q)}%"
+    extra, params = "", [pattern, pattern]
+    if collection:
+        # 컬렉션(예: 'Convolutional Neural Networks')으로 필터 — 원본
+        # Methods 인덱스의 카테고리 탐색 재현
+        extra = (" AND collections IS NOT NULL AND json_valid(collections)"
+                 " AND EXISTS (SELECT 1 FROM json_each(methods.collections) je"
+                 "             WHERE json_extract(je.value, '$.collection') = ?)")
+        params.append(collection)
     rows = conn.execute(
-        """SELECT * FROM methods
-           WHERE name LIKE ? ESCAPE '\\' OR full_name LIKE ? ESCAPE '\\'
+        f"""SELECT * FROM methods
+           WHERE (name LIKE ? ESCAPE '\\' OR full_name LIKE ? ESCAPE '\\')
+           {extra}
            ORDER BY num_papers DESC, url LIMIT ? OFFSET ?""",
-        (pattern, pattern, PAGE_SIZE, (page - 1) * PAGE_SIZE),
+        (*params, PAGE_SIZE, (page - 1) * PAGE_SIZE),
     ).fetchall()
     return [_loads(r, "collections") for r in rows]
+
+
+_collections_cache: dict[tuple, list[dict]] = {}
+
+
+def method_collections(conn, limit: int = 24) -> list[dict]:
+    """방법론 컬렉션(카테고리)별 건수 — 원본 Methods 인덱스 카테고리 카드."""
+    key = (_db_key(conn), limit)
+    if key in _collections_cache:
+        return _collections_cache[key]
+    rows = conn.execute(
+        """SELECT json_extract(je.value, '$.collection') AS name,
+                  COUNT(*) AS n
+           FROM methods m, json_each(m.collections) je
+           WHERE m.collections IS NOT NULL AND json_valid(m.collections)
+             AND json_extract(je.value, '$.collection') IS NOT NULL
+           GROUP BY name ORDER BY n DESC, name LIMIT ?""",
+        (limit,),
+    ).fetchall()
+    _collections_cache.clear()
+    _collections_cache[key] = [dict(r) for r in rows]
+    return _collections_cache[key]
+
+
+def most_implemented(conn, task: str, limit: int = 6) -> list[dict]:
+    """task 논문 중 구현 저장소가 가장 많은 논문 — 원본 task 페이지의
+    'Most implemented papers' 섹션 재현."""
+    ensure_papers_tasks(conn)
+    rows = conn.execute(
+        """SELECT p.*, COUNT(r.repo_url) AS n_repos
+           FROM papers_tasks pt
+           JOIN papers p ON p.paper_url = pt.paper_url
+           JOIN repos r ON r.paper_url = p.paper_url
+           WHERE pt.task = ?
+           GROUP BY p.paper_url
+           ORDER BY n_repos DESC, p.date DESC LIMIT ?""",
+        (task, limit),
+    ).fetchall()
+    return [_loads(r, "authors", "tasks", "methods") for r in rows]
 
 
 def get_method(conn, slug: str) -> dict | None:
