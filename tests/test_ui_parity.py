@@ -120,6 +120,30 @@ def test_paper_ranked_badge(client):
     assert "#2" in r2.text
 
 
+def test_chart_axis_extends_to_current_month(tmp_path):
+    """옛 결과뿐인 보드도 차트 x축이 현재 월까지 연장된다 — '살아있는
+    보드'가 축에서 드러나고, 마지막 점 이후 여백이 새 SOTA 부재를 보여줌."""
+    import datetime
+
+    db2 = tmp_path / "axis.sqlite"
+    c2 = pwc_db.connect(db2)
+    for i, (m, v, d) in enumerate([("A", "90.0", "2019-01-01"),
+                                   ("B", "92.0", "2020-01-01"),
+                                   ("C", "94.0", "2021-01-01")]):
+        c2.execute(
+            "INSERT INTO sota_rows (task,dataset,model_name,metrics,"
+            "paper_url,paper_date,code_links,metrics_order) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            ("Old Task", "OldSet", m, json.dumps({"Acc": v}),
+             f"https://x/p{i}", d, "[]", json.dumps(["Acc"])))
+    c2.commit()
+    c2.close()
+    r = TestClient(create_app(db2)).get("/sota/old-task/oldset")
+    assert r.status_code == 200
+    assert datetime.date.today().strftime("%Y-%m") in r.text  # 축 라벨
+    assert "2021" in r.text  # 데이터 자체는 그대로
+
+
 def test_lato_webfont_served(client):
     assert "Lato" in client.get("/").text  # @font-face 선언
     f = client.get("/static/fonts/lato-regular.woff2")

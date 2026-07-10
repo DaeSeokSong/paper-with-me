@@ -13,7 +13,10 @@
 {# 원본 PWC 리더보드 상단의 SOTA 추이 차트 — 점: 개별 결과, 선: 최고 기록 #}
 {% set dates = chart.points | map(attribute="date") | list %}
 {% set values = chart.points | map(attribute="value") | list %}
-{% set dmin, dmax = dates | min, dates | max %}
+{% set dmin = dates | min %}
+{# x축은 항상 현재 월까지 연장한다 — 마지막 점 이후의 여백이 '이후 새
+   SOTA 없음'을 보여주고, 보드가 살아있음(일일 갱신)이 축에서 드러난다 #}
+{% set dmax = [dates | max, current_month() ~ "-28"] | max %}
 {% set vmin, vmax = values | min, values | max %}
 {% set vspan = (vmax - vmin) or 1 %}
 {# 차트 제목은 SVG 밖 캡션으로 — SVG 안 텍스트는 화면 크기에 따라
