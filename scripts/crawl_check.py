@@ -30,6 +30,9 @@ from app.main import create_app  # noqa: E402
 
 SLOW = 20.0
 HREF_RE = re.compile(r'href="([^"]+)"')
+# 진짜 Jinja 잔재는 "{{ var }}"/"{% if"처럼 공백을 동반한다 — 방법론
+# 설명의 LaTeX(e_{{ij}})가 리터럴 {{로 렌더되는 콘텐츠 오탐을 제외한다
+TEMPLATE_RE = re.compile(r"\{\{\s|\{%-?\s")
 SEEDS = ["/", "/papers", "/sota", "/datasets", "/methods", "/trends",
          "/search?q=attention", "/sota/image-classification/cifar-100",
          "/sota/image-classification/imagenet"]
@@ -70,8 +73,12 @@ def crawl(client: TestClient, max_pages: int) -> list[str]:
             ctx = " ".join(body[max(0, i - 120):i + 40].split())
             issues.append(
                 f"{url} → 'None' 값 노출: …{ctx}… (출처 {referrer})")
-        if "{{" in body or "{%" in body:
-            issues.append(f"{url} → 템플릿 미치환 흔적 (출처 {referrer})")
+        tm = TEMPLATE_RE.search(body)
+        if tm:
+            i = tm.start()
+            ctx = " ".join(body[max(0, i - 120):i + 60].split())
+            issues.append(
+                f"{url} → 템플릿 미치환 흔적: …{ctx}… (출처 {referrer})")
         hrefs = []
         for href in HREF_RE.findall(body):
             if href.startswith(SKIP_PREFIX):
