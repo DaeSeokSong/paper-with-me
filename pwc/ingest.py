@@ -294,8 +294,8 @@ def ingest_evaluations(conn: sqlite3.Connection, path: Path) -> int:
     sql = """INSERT INTO sota_rows
              (task, parent_task, dataset, model_name, metrics,
               paper_url, paper_title, paper_date, code_links, metrics_order,
-              area, uses_additional_data)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"""
+              area, uses_additional_data, tags)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"""
     # 아카이브 재적재는 archive 행만 교체한다 — 커뮤니티 기여(contrib)와
     # 자동 추출(auto) 행을 지우면 안 된다
     conn.execute(
@@ -327,6 +327,8 @@ def ingest_evaluations(conn: sqlite3.Connection, path: Path) -> int:
                     area,
                     # 원본 리더보드의 Extra Training Data 체크 컬럼
                     _to_int(row.get("uses_additional_data")),
+                    # 원본 리더보드의 Tags 컬럼 (행별 방법 태그)
+                    _dumps(_nested(row.get("tags"))),
                 )
         for sub in _nested(task_obj.get("subtasks")) or []:
             yield from flatten(sub, task_name, area)

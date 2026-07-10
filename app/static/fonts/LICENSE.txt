@@ -1,0 +1,9 @@
+Lato — Copyright (c) 2010-2014 Łukasz Dziedzic (dziedzic@typoland.com),
+with Reserved Font Name "Lato".
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+The license text is available with a FAQ at: https://openfontlicense.org
+
+Files here (lato-*.woff2) are unmodified web-font builds obtained from
+https://github.com/mrkelly/lato — vendored for self-hosting (원본
+paperswithcode.com이 사용한 서체의 동등성 복원).

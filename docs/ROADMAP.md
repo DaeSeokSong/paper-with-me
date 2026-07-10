@@ -63,12 +63,15 @@
       논문 페이지 Methods 용어집
 - [ ] TLDR 한 줄 요약 — 수요 근거 최상위(Semantic Scholar 6천만 편)이나
       LLM API 또는 Semantic Scholar API 연동 필요 (비용 검토 후)
-- [ ] 원본 잔여 격차 (동등성 검수 기록):
-      리더보드 Tags/Result 컬럼,
-      논문 카드 썸네일·"Ranked #N" 스파크라인 배지,
-      /datasets 좌측 필터 패널(모달리티/task/언어),
-      Methods 인덱스 카테고리 카드, task 페이지 Papers 목록·
-      Most implemented 섹션, 원본 webfont 서체
+- [x] 원본 잔여 격차 해소 (동등성 검수 기록 기반):
+      리더보드 Tags 컬럼(신규 빌드 스냅샷부터 데이터 반영),
+      논문 페이지 "Ranked #N" 배지, /datasets 좌측 필터 패널
+      (모달리티/언어 + 건수 퍼싯), Methods 인덱스 컬렉션 칩·필터,
+      task 페이지 Papers 목록·Most implemented 섹션,
+      원본 webfont 서체(Lato, OFL 자가 호스팅) + 절제된 모션
+      (transform/opacity만, prefers-reduced-motion 존중)
+- [ ] 원본 잔여 격차 (남음): 논문 카드 썸네일(이미지 데이터 없음 —
+      외부 수집 필요), 리더보드 Result 상세 컬럼
 
 ## Phase 4 — 앱 (App)
 

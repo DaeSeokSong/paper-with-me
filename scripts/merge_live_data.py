@@ -56,14 +56,18 @@ def merge(new_db: Path, old_db: Path) -> dict[str, int]:
 
     # 커뮤니티 기여·자동 추출 리더보드 행 — 재빌드가 이걸 버리면 기여는
     # 다음 collect까지 공백, auto는 영구 유실이었다 (코드 리뷰 발견)
+    # tags 컬럼이 없는 구 스냅샷도 이관 가능해야 한다
+    old_cols = {r[1] for r in conn.execute("PRAGMA old.table_info(sota_rows)")}
+    tags_sel = "o.tags" if "tags" in old_cols else "NULL"
     counts["sota_rows"] = conn.execute(
-        """INSERT INTO sota_rows
+        f"""INSERT INTO sota_rows
            (task, parent_task, dataset, model_name, metrics, paper_url,
             paper_title, paper_date, code_links, metrics_order, area,
-            uses_additional_data, source)
+            uses_additional_data, source, tags)
            SELECT o.task, o.parent_task, o.dataset, o.model_name, o.metrics,
                   o.paper_url, o.paper_title, o.paper_date, o.code_links,
-                  o.metrics_order, o.area, o.uses_additional_data, o.source
+                  o.metrics_order, o.area, o.uses_additional_data, o.source,
+                  {tags_sel}
            FROM old.sota_rows o
            WHERE o.source IN ('contrib', 'auto')
              AND NOT EXISTS (SELECT 1 FROM sota_rows n

@@ -5,22 +5,46 @@
 <form action="/methods" method="get" class="catalog-search">
   <input type="search" name="q" placeholder="방법론 검색…"
          aria-label="방법론 검색" value="{{ q }}">
+  {% if col %}<input type="hidden" name="col" value="{{ col }}">{% endif %}
 </form>
+
+{# 원본 Methods 인덱스의 카테고리(컬렉션) 카드 — 검색 없이 들어온 첫
+   화면에서 탐색 진입점을 제공한다 #}
+{% if collections and not q %}
+<div class="collection-chips">
+  {% for c in collections %}
+    {% if col == c.name %}
+    <a class="badge on" href="/methods">✓ {{ c.name }} <span class="muted">{{ c.n }}</span></a>
+    {% else %}
+    <a class="badge" href="/methods?col={{ c.name | urlencode }}">{{ c.name }} <span class="muted">{{ c.n }}</span></a>
+    {% endif %}
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if col %}
+<p class="muted">컬렉션: <b lang="en">{{ col }}</b> ·
+  <a href="/methods?q={{ q | urlencode }}">해제</a></p>
+{% endif %}
+
 <div class="grid">
   {% for m in methods %}
   <div class="card">
     <h2 lang="en"><a href="/method/{{ m.url | paper_slug if m.url else m.name | slugify }}">{{ m.name }}</a></h2>
     {% if m.full_name and m.full_name != m.name %}<div class="muted">{{ m.full_name }}</div>{% endif %}
     <div class="muted">
-      {% if m.introduced_year %}{{ m.introduced_year }}년{% endif %}
-      {% if m.num_papers %} · 논문 {{ "{:,}".format(m.num_papers) }}편{% endif %}
+      {%- if m.introduced_year %}{{ m.introduced_year }}년{% endif %}
+      {%- if m.num_papers %}{% if m.introduced_year %} · {% endif %}논문 {{ "{:,}".format(m.num_papers) }}편{% endif %}
     </div>
-    {% for c in m.collections %}<span class="badge">{{ c.collection }}</span>{% endfor %}
+    {% for c in m.collections %}{% if c is mapping and c.get("collection") %}<a class="badge" href="/methods?col={{ c.collection | urlencode }}">{{ c.collection }}</a>{% endif %}{% endfor %}
   </div>
-  {% else %}<p>결과가 없습니다.</p>{% endfor %}
+  {% else %}<p>결과가 없습니다.{% if col %}
+    <a href="/methods">컬렉션 필터 해제</a>{% endif %}</p>{% endfor %}
 </div>
 <div class="pager">
-  {% if page > 1 %}<a href="/methods?q={{ q | urlencode }}&page={{ page - 1 }}">← 이전</a>{% endif %}
-  {% if methods | length == PAGE_SIZE %}<a href="/methods?q={{ q | urlencode }}&page={{ page + 1 }}">다음 →</a>{% endif %}
+  {% set base = "/methods?q=" ~ (q | urlencode)
+     ~ ("&col=" ~ (col | urlencode) if col else "") %}
+  {% if page > 1 %}<a href="{{ base }}&page={{ page - 1 }}">← 이전</a>{% endif %}
+  {% if methods | length == PAGE_SIZE %}<a href="{{ base }}&page={{ page + 1 }}">다음 →</a>{% endif %}
 </div>
 {% endblock %}

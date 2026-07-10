@@ -5,7 +5,60 @@
 <form action="/datasets" method="get" class="catalog-search">
   <input type="search" name="q" placeholder="데이터셋 검색…"
          aria-label="데이터셋 검색" value="{{ q }}">
+  {% if mod %}<input type="hidden" name="mod" value="{{ mod }}">{% endif %}
+  {% if lang %}<input type="hidden" name="lang" value="{{ lang }}">{% endif %}
 </form>
+
+{# 원본 /datasets의 좌측 필터 패널 (모달리티/언어) — 좁은 화면에서는
+   접히는 패널로 내려간다 #}
+{% macro filter_url(new_mod, new_lang) -%}
+/datasets?q={{ q | urlencode }}{% if new_mod %}&mod={{ new_mod | urlencode }}{% endif %}{% if new_lang %}&lang={{ new_lang | urlencode }}{% endif %}
+{%- endmacro %}
+<div class="with-filters">
+<aside class="filter-panel">
+  {% if facets.modalities %}
+  <details open>
+    <summary>Filter by Modality</summary>
+    <ul>
+      {% for f in facets.modalities %}
+      <li>
+        {% if mod == f.value %}
+        <a class="on" href="{{ filter_url('', lang) }}">✓ {{ f.value }}</a>
+        {% else %}
+        <a href="{{ filter_url(f.value, lang) }}">{{ f.value }}</a>
+        {% endif %}
+        <span class="muted">{{ "{:,}".format(f.n) }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+  {% if facets.languages %}
+  <details {% if lang %}open{% endif %}>
+    <summary>Filter by Language</summary>
+    <ul>
+      {% for f in facets.languages %}
+      <li>
+        {% if lang == f.value %}
+        <a class="on" href="{{ filter_url(mod, '') }}">✓ {{ f.value }}</a>
+        {% else %}
+        <a href="{{ filter_url(mod, f.value) }}">{{ f.value }}</a>
+        {% endif %}
+        <span class="muted">{{ "{:,}".format(f.n) }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+</aside>
+
+<div class="filter-results">
+{% if mod or lang %}
+<p class="muted">필터:
+  {% if mod %}<span class="badge">{{ mod }} <a href="{{ filter_url('', lang) }}" aria-label="{{ mod }} 필터 해제">×</a></span>{% endif %}
+  {% if lang %}<span class="badge">{{ lang }} <a href="{{ filter_url(mod, '') }}" aria-label="{{ lang }} 필터 해제">×</a></span>{% endif %}
+</p>
+{% endif %}
 <div class="grid">
   {% for d in datasets %}
   <div class="card">
@@ -14,10 +67,16 @@
     <div class="muted">{% if d.num_papers %}논문 {{ "{:,}".format(d.num_papers) }}편{% endif %}</div>
     {% for m in d.modalities %}<span class="badge">{{ m }}</span>{% endfor %}
   </div>
-  {% else %}<p>결과가 없습니다.</p>{% endfor %}
+  {% else %}<p>결과가 없습니다.{% if mod or lang %}
+    <a href="/datasets?q={{ q | urlencode }}">필터 해제</a>{% endif %}</p>{% endfor %}
 </div>
 <div class="pager">
-  {% if page > 1 %}<a href="/datasets?q={{ q | urlencode }}&page={{ page - 1 }}">← 이전</a>{% endif %}
-  {% if datasets | length == PAGE_SIZE %}<a href="/datasets?q={{ q | urlencode }}&page={{ page + 1 }}">다음 →</a>{% endif %}
+  {% set base = "/datasets?q=" ~ (q | urlencode)
+     ~ ("&mod=" ~ (mod | urlencode) if mod else "")
+     ~ ("&lang=" ~ (lang | urlencode) if lang else "") %}
+  {% if page > 1 %}<a href="{{ base }}&page={{ page - 1 }}">← 이전</a>{% endif %}
+  {% if datasets | length == PAGE_SIZE %}<a href="{{ base }}&page={{ page + 1 }}">다음 →</a>{% endif %}
+</div>
+</div>
 </div>
 {% endblock %}

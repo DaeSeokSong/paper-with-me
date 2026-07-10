@@ -89,8 +89,9 @@ def build_router(get_conn) -> APIRouter:
         return {"task": name, **board}
 
     @router.get("/datasets", summary="데이터셋 카탈로그")
-    def datasets(q: str = "", page: Page = 1):
-        return paginated(queries.list_datasets(get_conn(), q, page), page)
+    def datasets(q: str = "", page: Page = 1, mod: str = "", lang: str = ""):
+        return paginated(
+            queries.list_datasets(get_conn(), q, page, mod, lang), page)
 
     @router.get("/datasets/{slug}", summary="데이터셋 상세")
     def dataset(slug: str):
@@ -103,8 +104,9 @@ def build_router(get_conn) -> APIRouter:
         return d
 
     @router.get("/methods", summary="방법론 카탈로그")
-    def methods(q: str = "", page: Page = 1):
-        return paginated(queries.list_methods(get_conn(), q, page), page)
+    def methods(q: str = "", page: Page = 1, col: str = ""):
+        return paginated(
+            queries.list_methods(get_conn(), q, page, col), page)
 
     @router.get("/methods/{slug}", summary="방법론 상세")
     def method(slug: str):
