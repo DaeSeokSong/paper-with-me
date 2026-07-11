@@ -13,7 +13,8 @@ on:
 
 permissions:
   contents: read
-  actions: read
+  # 429 등으로 중단 시 부분 진행을 업로드하고 스스로 재실행하기 위해 write
+  actions: write
 
 # update-data와 같은 스냅샷 아티팩트를 읽고-쓴다 — 동시 실행 시 서로의
 # 수집분을 덮어쓰지 않도록 스냅샷 기록자끼리 직렬화한다
@@ -45,7 +46,7 @@ jobs:
           dest: data
 
       - name: Backfill papers (2025-07 → today) + retag + re-extract
-        run: python -m pwc backfill --data-dir data
+        run: python -m pwc backfill --data-dir data | tee backfill.log
 
       - name: Show stats
         run: python -m pwc stats --data-dir data
@@ -60,3 +61,16 @@ jobs:
           name: pwc-sqlite
           path: data/pwc.sqlite
           retention-days: 30
+
+      # arXiv 차단 등으로 중간에 멈췄고 이번 실행에서 진전이 있었다면,
+      # 부분 스냅샷을 계보에 남긴 채 스스로 재실행해 체크포인트부터 잇는다
+      # (진전 없는 중단은 재실행하지 않아 무한 루프를 막는다)
+      - name: Continue from checkpoint if incomplete
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if grep -q "INCOMPLETE_WITH_PROGRESS" backfill.log; then
+            echo "부분 완료 — 체크포인트부터 재개하도록 재실행 요청"
+            gh workflow run backfill-data.yml --ref main
+          fi

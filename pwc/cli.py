@@ -124,8 +124,15 @@ def cmd_backfill(args: argparse.Namespace) -> int:
     from .collectors import arxiv, auto_tag, results_extract
 
     conn = db.connect(args.data_dir / "pwc.sqlite")
-    added = arxiv.backfill(conn, args.start, args.end, args.window_days)
-    print(f"[backfill] 신규 논문 {added:,}편", flush=True)
+    added, complete, windows = arxiv.backfill(
+        conn, args.start, args.end, args.window_days)
+    print(f"[backfill] 신규 논문 {added:,}편 (완료 창 {windows}개)",
+          flush=True)
+    if not complete:
+        # 워크플로가 이 마커로 자동 재개(진전이 있었을 때만) 여부를 결정
+        marker = ("INCOMPLETE_WITH_PROGRESS" if windows
+                  else "INCOMPLETE_NO_PROGRESS")
+        print(f"[backfill] {marker} — 체크포인트부터 재개 가능", flush=True)
     total_new = conn.execute(
         "SELECT COUNT(*) FROM papers WHERE source != 'archive'"
     ).fetchone()[0]
