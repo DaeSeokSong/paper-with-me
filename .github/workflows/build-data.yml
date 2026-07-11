@@ -17,10 +17,12 @@ permissions:
   contents: read
   actions: read
 
-# 연속 push로 다중 빌드가 겹치면 HF에서 수 GB 덤프를 동시에 받다가
-# 429/5xx로 죽는다 — 직렬화하되 진행 중인 빌드는 낭비하지 않는다
+# 스냅샷을 읽고-쓰는 다른 워크플로(update-data/backfill)와 같은 그룹으로
+# 직렬화한다 — 병렬로 돌면 늦게 끝난 쪽이 상대의 수집분을 계보에서
+# 밀어낸다 (실제 사고: 백필 13만 편이 병렬 재빌드 산출물에 밀림).
+# HF 덤프 동시 다운로드 429/5xx 방지도 겸한다.
 concurrency:
-  group: build-data
+  group: snapshot-writers
   cancel-in-progress: false
 
 jobs:
