@@ -130,6 +130,28 @@ def test_metric_token_signal_extracts_bleu(conn):
     assert json.loads(row[1]) == {"BLEU score": "29.3"}
 
 
+def test_accuracy_family_canonicalized_to_primary_metric(conn):
+    """보드에 'Accuracy'라는 별개 지표명이 존재해도, 정확도 계열 언급은
+    주 지표(Percentage correct)로 정규화된다 — 아니면 차트(주 지표만
+    그림)와 값 순 병합에서 빠지고 지표 컬럼만 파편화된다 (CIFAR-10
+    보드에서 사용자 보고)."""
+    conn.execute(
+        "INSERT INTO sota_rows (task,dataset,model_name,metrics,paper_url,"
+        "code_links,metrics_order) VALUES (?,?,?,?,?,?,?)",
+        ("Image Classification", "CIFAR-100", "AccNet",
+         json.dumps({"Accuracy": "93.0"}), "https://x/paper/accnet", "[]",
+         json.dumps(["Percentage correct"])),
+    )
+    conn.commit()
+    _add_paper(conn, "canon-paper",
+               "We propose CanonNet for image classification. CanonNet "
+               "achieves 95.20% accuracy on CIFAR-100.")
+    assert results_extract.collect(conn) == 1
+    row = conn.execute(
+        "SELECT metrics FROM sota_rows WHERE source='auto'").fetchone()
+    assert json.loads(row[0]) == {"Percentage correct": "95.20"}
+
+
 def test_unit_suffixed_numbers_ignored(conn):
     """'1.5x' 배속·'25.3M' 파라미터처럼 단위 접미 수치는 후보에서 제외."""
     _add_paper(conn, "unit-paper",
