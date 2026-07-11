@@ -69,7 +69,7 @@ def merge(new_db: Path, old_db: Path) -> dict[str, int]:
                   o.metrics_order, o.area, o.uses_additional_data, o.source,
                   {tags_sel}
            FROM old.sota_rows o
-           WHERE o.source IN ('contrib', 'auto')
+           WHERE o.source IN ('contrib', 'auto', 'external')
              AND NOT EXISTS (SELECT 1 FROM sota_rows n
                              WHERE n.task = o.task AND n.dataset = o.dataset
                                AND n.paper_url = o.paper_url)"""

@@ -880,13 +880,14 @@ def dataset_leaderboard(conn, task: str, dataset: str) -> dict:
                for r in rows)
     ]
     metric_names = metric_names[:8]
-    # 자동 추출(source='auto') 행은 id 순서상 맨 뒤에 붙으므로, 주 지표
-    # 값 기준으로 원본 순서열 안의 제자리에 끼워 넣는다 (원본 행들의
-    # 상대 순서는 그대로 유지 — 재정렬 금지 원칙은 원본 행에만 적용)
+    # 자동 추출(auto)·외부 미러(external) 행은 id 순서상 맨 뒤에 붙으므로,
+    # 주 지표 값 기준으로 원본 순서열 안의 제자리에 끼워 넣는다 (원본
+    # 행들의 상대 순서는 그대로 유지 — 재정렬 금지 원칙은 원본 행에만)
     primary = metric_names[0] if metric_names else None
-    auto = [r for r in rows if r.get("source") == "auto"]
+    _merged_sources = ("auto", "external")
+    auto = [r for r in rows if r.get("source") in _merged_sources]
     if auto and primary:
-        base = [r for r in rows if r.get("source") != "auto"]
+        base = [r for r in rows if r.get("source") not in _merged_sources]
         lower_better = bool(_LOWER_BETTER.search(primary))
         for a in auto:
             av = _metric_value(a, primary)

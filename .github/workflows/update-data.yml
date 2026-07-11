@@ -50,6 +50,8 @@ jobs:
       - name: Collect new data (arXiv, HF Papers, GitHub links)
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          # 외부 리더보드(Artificial Analysis) — 무료 API 키 (없으면 건너뜀)
+          AA_API_KEY: ${{ secrets.AA_API_KEY }}
         run: python -m pwc collect --data-dir data
 
       - name: Show stats
