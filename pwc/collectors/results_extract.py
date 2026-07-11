@@ -55,8 +55,9 @@ def _benchmark_index(conn: sqlite3.Connection) -> dict:
     auto 행을 포함하면 오염된 값이 다음 추출의 기준이 되어 표류한다.
     """
     boards: dict[tuple, dict] = {}
-    for task, dataset, metrics_json in conn.execute(
-        """SELECT task, dataset, metrics FROM sota_rows
+    primaries: dict[tuple, str] = {}
+    for task, dataset, metrics_json, order_json in conn.execute(
+        """SELECT task, dataset, metrics, metrics_order FROM sota_rows
            WHERE task IS NOT NULL AND dataset IS NOT NULL
              AND (source IS NULL OR source != 'auto')"""
     ):
@@ -67,6 +68,16 @@ def _benchmark_index(conn: sqlite3.Connection) -> dict:
         if not isinstance(metrics, dict):
             continue
         board = boards.setdefault((task, dataset), {})
+        # 보드의 주 지표(원본 metrics_order의 첫 항목) — 차트·순위 병합이
+        # 주 지표 기준이므로 추출도 가능한 한 주 지표로 정규화한다
+        if (task, dataset) not in primaries and order_json:
+            try:
+                order = json.loads(order_json)
+                if isinstance(order, list) and order \
+                        and isinstance(order[0], str):
+                    primaries[(task, dataset)] = order[0]
+            except ValueError:
+                pass
         for name, value in metrics.items():
             try:
                 v = float(str(value).replace("%", "").replace(",", "").strip())
@@ -78,7 +89,8 @@ def _benchmark_index(conn: sqlite3.Connection) -> dict:
         if len(dataset) < MIN_DATASET_LEN or not metrics:
             continue
         index.setdefault(dataset.lower(), []).append(
-            {"task": task, "dataset": dataset, "metrics": metrics})
+            {"task": task, "dataset": dataset, "metrics": metrics,
+             "primary": primaries.get((task, dataset))})
     return index
 
 
@@ -91,6 +103,23 @@ def _model_name(title: str, abstract: str) -> str:
     if 0 < len(head) <= 30 and len(head.split()) <= 3:
         return head
     return (title or "")[:40]
+
+
+# 정확도 동의 계열 — 같은 보드 안에서 사실상 같은 지표의 표기 변형.
+# 이 계열 안에서의 매치는 보드의 주 지표로 정규화한다 (지표 컬럼
+# 파편화 방지 + 차트/순위 병합이 주 지표 기준이므로)
+_ACC_FAMILY = re.compile(
+    r"^(accuracy|acc|percentage correct|top ?1(?: accuracy)?|"
+    r"top ?1 acc(?:uracy)?|average accuracy)$")
+
+
+def _canonical_metric(name: str, board: dict) -> str:
+    primary = board.get("primary")
+    if (primary and primary in board["metrics"] and name != primary
+            and _ACC_FAMILY.match(_norm(name))
+            and _ACC_FAMILY.match(_norm(primary))):
+        return primary
+    return name
 
 
 def _metric_signals(name: str) -> list[str]:
@@ -190,6 +219,9 @@ def extract_from_text(title: str, abstract: str, index: dict) -> list[dict]:
                                                  window_lower)
                 if not metric:
                     continue
+                # 정확도 계열 표기 변형은 보드 주 지표로 정규화 — 차트·
+                # 순위 병합에 반영되고 지표 컬럼이 파편화되지 않는다
+                metric = _canonical_metric(metric, board)
                 key = (board["task"], board["dataset"], metric)
                 if key in seen:
                     continue
