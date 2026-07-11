@@ -67,30 +67,58 @@ def fetch_window(start: str, end: str, page_size: int = 1000,
 
 
 def backfill(conn: sqlite3.Connection, start_date: str, end_date: str,
-             window_days: int = 14) -> int:
+             window_days: int = 14) -> tuple[int, bool, int]:
     """아카이브 종료(2025-07)와 일일 수집 시작 사이의 공백 기간을 채운다.
 
     일일 수집(fetch_recent)은 최근 논문만 가져오므로, 아카이브 이후
     수집 가동 전까지의 논문(약 1년치)은 이 백필 없이는 영구 공백이다 —
     'CIFAR-100을 쓴 2025-08~2026-06 논문이 하나도 없어 보이는' 원인.
     upsert가 arxiv_id 기준 멱등이라 재실행·기간 중복에 안전하다.
+
+    창 완료마다 meta에 체크포인트를 남긴다 — arXiv 429처럼 분 단위
+    차단으로 중단돼도 부분 진행이 스냅샷에 남고, 재실행이 완료 지점
+    다음 창부터 이어간다 (전량 재크롤로 다시 429를 부르는 악순환 방지).
+    반환: (신규 논문 수, 완주 여부, 이번 실행에서 완료한 창 수)
     """
     import datetime as dt
 
     cur = dt.date.fromisoformat(start_date)
     end = dt.date.fromisoformat(end_date)
-    total = 0
+    row = conn.execute(
+        "SELECT value FROM meta WHERE key = 'backfill_done_until'"
+    ).fetchone()
+    if row and row[0]:
+        try:
+            done = dt.date.fromisoformat(row[0])
+            if done >= cur:
+                cur = done + dt.timedelta(days=1)
+                print(f"[backfill] 체크포인트 {done} — {cur}부터 재개",
+                      flush=True)
+        except ValueError:
+            pass
+    total, windows_done = 0, 0
     while cur <= end:
         win_end = min(cur + dt.timedelta(days=window_days - 1), end)
         received = 0
-        for page in fetch_window(cur.strftime("%Y%m%d") + "0000",
-                                 win_end.strftime("%Y%m%d") + "2359"):
-            received += len(page)
-            total += upsert_papers(conn, page, source="arxiv")
+        try:
+            for page in fetch_window(cur.strftime("%Y%m%d") + "0000",
+                                     win_end.strftime("%Y%m%d") + "2359"):
+                received += len(page)
+                total += upsert_papers(conn, page, source="arxiv")
+        except Exception as e:  # noqa: BLE001 - 부분 진행 보존이 우선
+            print(f"[backfill] {cur} ~ {win_end} 창에서 중단({e}) — "
+                  f"지금까지의 진행을 보존하고 다음 실행이 재개",
+                  flush=True)
+            return total, False, windows_done
+        conn.execute(
+            "INSERT OR REPLACE INTO meta (key, value) "
+            "VALUES ('backfill_done_until', ?)", (win_end.isoformat(),))
+        conn.commit()
+        windows_done += 1
         print(f"[backfill] {cur} ~ {win_end}: 수신 {received:,}편 "
               f"(누적 신규 {total:,})", flush=True)
         cur = win_end + dt.timedelta(days=1)
-    return total
+    return total, True, windows_done
 
 
 def parse_feed(data: bytes) -> list[dict]:

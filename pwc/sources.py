@@ -45,7 +45,9 @@ def open_with_retry(url: str, timeout: int = 120):
             if (code is not None and code not in _RETRY_STATUS) \
                     or attempt == _RETRIES:
                 raise
-            wait = 15 * attempt
+            # 429는 서비스가 명시적으로 속도를 낮추라는 신호 — arXiv는
+            # 차단 창이 분 단위라 짧은 백오프로는 재시도가 전부 소진된다
+            wait = (60 if code == 429 else 15) * attempt
             print(f"  일시 오류({e}) — {wait}s 후 재시도 ({attempt}/{_RETRIES - 1})",
                   file=sys.stderr)
             time.sleep(wait)

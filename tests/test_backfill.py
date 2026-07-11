@@ -34,15 +34,44 @@ def test_backfill_iterates_windows_and_upserts(conn, monkeypatch):
                for j in range(3)]
 
     monkeypatch.setattr(arxiv, "fetch_window", fake_window)
-    added = arxiv.backfill(conn, "2025-07-01", "2025-08-09", window_days=14)
+    added, complete, done = arxiv.backfill(
+        conn, "2025-07-01", "2025-08-09", window_days=14)
     # 40일 → 14일 창 3개, 창마다 3편
     assert len(windows) == 3
     assert windows[0][0] == "202507010000"
     assert windows[-1][1] == "202508092359"
-    assert added == 9
+    assert (added, complete, done) == (9, True, 3)
     assert conn.execute(
         "SELECT COUNT(*) FROM papers WHERE source='arxiv'"
     ).fetchone()[0] == 9
+
+
+def test_backfill_resumes_from_checkpoint(conn, monkeypatch):
+    """중단(429 등) 후 재실행이 완료된 창을 다시 크롤하지 않는다."""
+    calls = []
+
+    def failing_window(start, end, page_size=1000, delay=3.0):
+        calls.append(start)
+        if len(calls) == 2:
+            raise RuntimeError("HTTP 429")
+        yield [_paper(len(calls), f"{start[:4]}-{start[4:6]}-{start[6:8]}")]
+
+    monkeypatch.setattr(arxiv, "fetch_window", failing_window)
+    added, complete, done = arxiv.backfill(
+        conn, "2025-07-01", "2025-08-09", window_days=14)
+    assert (complete, done) == (False, 1)  # 창 1개 완료 후 중단
+    # 재실행(장애 해소 가정): 체크포인트 다음 창부터 — 첫 창은 재크롤 없음
+    resumed_calls = []
+
+    def ok_window(start, end, page_size=1000, delay=3.0):
+        resumed_calls.append(start)
+        yield [_paper(50 + len(resumed_calls), f"{start[:4]}-{start[4:6]}-01")]
+
+    monkeypatch.setattr(arxiv, "fetch_window", ok_window)
+    added2, complete2, done2 = arxiv.backfill(
+        conn, "2025-07-01", "2025-08-09", window_days=14)
+    assert resumed_calls[0] == "202507150000"  # 2번째 창부터 재개
+    assert complete2 is True and done2 == 2
 
 
 def test_backfill_is_idempotent(conn, monkeypatch):
@@ -50,8 +79,11 @@ def test_backfill_is_idempotent(conn, monkeypatch):
         yield [_paper(1, "2025-09-01")]
 
     monkeypatch.setattr(arxiv, "fetch_window", fake_window)
-    assert arxiv.backfill(conn, "2025-09-01", "2025-09-01") == 1
-    assert arxiv.backfill(conn, "2025-09-01", "2025-09-01") == 0  # 재실행
+    assert arxiv.backfill(conn, "2025-09-01", "2025-09-01")[0] == 1
+    conn.execute("DELETE FROM meta WHERE key='backfill_done_until'")
+    conn.commit()
+    # 체크포인트 없이 같은 기간 재실행해도 중복 삽입 없음 (arxiv_id 멱등)
+    assert arxiv.backfill(conn, "2025-09-01", "2025-09-01")[0] == 0
     assert conn.execute("SELECT COUNT(*) FROM papers").fetchone()[0] == 1
 
 
@@ -73,18 +105,23 @@ def test_fetch_window_paginates_until_short_page(monkeypatch):
     assert "submittedDate" in calls[0]
 
 
-def test_backfill_cli_registered():
+def test_backfill_cli_registered(monkeypatch, tmp_path):
+    """CLI 서브커맨드 등록·인자 전달 확인 — 수집기는 모킹 (네트워크 금지)."""
     from pwc import cli
-    # argparse 등록 확인 — 인자 파싱만 (네트워크 없음)
-    parser_error = None
-    try:
-        cli.main(["backfill", "--start", "2025-07-01", "--end",
-                  "2025-07-01", "--data-dir", "/nonexistent-dir-x/y"])
-    except SystemExit:
-        parser_error = True
-    except Exception:
-        pass  # DB 경로 오류 등 — 파싱은 통과했다는 뜻
-    assert parser_error is not True
+    from pwc.collectors import arxiv as ax
+
+    seen = {}
+
+    def fake_backfill(conn, start, end, window_days):
+        seen.update(start=start, end=end, window_days=window_days)
+        return 0, True, 0
+
+    monkeypatch.setattr(ax, "backfill", fake_backfill)
+    rc = cli.main(["backfill", "--start", "2025-07-01", "--end",
+                   "2025-07-02", "--data-dir", str(tmp_path)])
+    assert rc == 0
+    assert seen == {"start": "2025-07-01", "end": "2025-07-02",
+                    "window_days": 14}
 
 
 def test_auto_tag_combined_matcher_semantics():
