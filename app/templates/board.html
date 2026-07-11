@@ -98,6 +98,8 @@
       <span class="badge" title="신규 논문 초록에서 자동 추출된 결과 — 커뮤니티 검증 전">자동 추출</span>
       {%- elif r.get("source") == "contrib" %}
       <span class="badge" title="커뮤니티 기여로 추가된 결과">기여</span>
+      {%- elif r.get("source") == "external" %}
+      <span class="badge" title="외부 평가기관 리더보드 미러 — 출처는 행의 링크 참조">외부</span>
       {%- endif %}</td>
     {% for m in board.metric_names %}<td>{{ r.metrics.get(m, "–") if r.metrics is mapping else "–" }}</td>{% endfor %}
     {% if has_extra %}<td>{{ "✓" if r.get("uses_additional_data") else "" }}</td>{% endif %}

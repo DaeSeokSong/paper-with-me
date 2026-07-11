@@ -75,8 +75,8 @@ def cmd_collect(args: argparse.Namespace) -> int:
     """Phase 2 수집기 실행 — 아카이브 스냅샷 이후의 신규 데이터를 채운다."""
     import os
 
-    from .collectors import (arxiv, auto_tag, github_links, hf_models,
-                             hf_papers, results_extract)
+    from .collectors import (arxiv, auto_tag, external_boards, github_links,
+                             hf_models, hf_papers, results_extract)
 
     conn = db.connect(args.data_dir / "pwc.sqlite")
     failures = 0
@@ -97,6 +97,9 @@ def cmd_collect(args: argparse.Namespace) -> int:
             elif source == "results":
                 # 초록에서 리더보드 결과 추출 — 논문 수집기들 뒤에 실행
                 results_extract.collect(conn)
+            elif source == "external":
+                # 외부 평가기관 리더보드 미러 (Artificial Analysis/SEAL)
+                external_boards.collect(conn)
         except Exception as e:  # noqa: BLE001 - 소스별 독립 실행
             print(f"[{source}] 수집 실패: {e}", file=sys.stderr)
             failures += 1
@@ -190,9 +193,9 @@ def main(argv: list[str] | None = None) -> int:
         if name == "collect":
             p.add_argument("--source", nargs="*",
                            choices=["arxiv", "hf", "hf-models", "github",
-                                    "tags", "results"],
+                                    "tags", "results", "external"],
                            default=["arxiv", "hf", "hf-models", "github",
-                                    "tags", "results"],
+                                    "tags", "results", "external"],
                            help="실행할 수집기 (기본: 전체)")
             p.add_argument("--max-results", type=int, default=500,
                            help="arXiv 최대 수집 편수")
