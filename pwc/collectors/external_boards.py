@@ -114,6 +114,9 @@ def collect_artificial_analysis(conn: sqlite3.Connection) -> int:
         payload = json.load(resp)
     models = payload.get("data") or []
     added = 0
+    # 환각률·태스크당 비용처럼 문서 예시에 없는 필드는 이름을 추정할 수
+    # 없다 — 실제 응답의 미매핑 키를 로그로 남겨 매핑 갱신 근거로 쓴다
+    unmapped: dict[str, object] = {}
     for m in models:
         if not isinstance(m, dict):
             continue
@@ -127,6 +130,10 @@ def collect_artificial_analysis(conn: sqlite3.Connection) -> int:
         evals = m.get("evaluations") or {}
         if not isinstance(evals, dict):
             continue
+        for k, v in evals.items():
+            if (k not in AA_BENCHMARKS and k not in AA_RAW_BENCHMARKS
+                    and k not in unmapped):
+                unmapped[k] = v
         seen_ds: set[str] = set()
         for key_name, spec in AA_BENCHMARKS.items():
             raw = evals.get(key_name)
@@ -160,6 +167,17 @@ def collect_artificial_analysis(conn: sqlite3.Connection) -> int:
             _insert(conn, task, dataset, metric, name, f"{v:g}", date,
                     AA_AREA, AA_LINK)
             added += 1
+    if models and isinstance(models[0], dict):
+        print(f"[external] AA 모델 최상위 필드: {sorted(models[0].keys())}",
+              flush=True)
+        pricing = models[0].get("pricing")
+        if isinstance(pricing, dict):
+            print("[external] AA pricing 필드: "
+                  f"{json.dumps(pricing, ensure_ascii=False)}", flush=True)
+    if unmapped:
+        print(f"[external] AA 미매핑 평가 키 {len(unmapped)}개: "
+              f"{json.dumps(unmapped, ensure_ascii=False, default=str)[:2000]}",
+              flush=True)
     print(f"[external] Artificial Analysis: 모델 {len(models)}개 → "
           f"{added}행", flush=True)
     return added
