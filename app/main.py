@@ -480,10 +480,12 @@ def create_app(db_path: Path | None = None) -> FastAPI:
 
     @app.get("/agents", response_class=HTMLResponse)
     def agents(request: Request):
-        """AI Agents 비교 — Artificial Analysis 원본 4개 지표 미러."""
+        """AI Agents 비교 — Artificial Analysis 원본 지표 미러 +
+        가성비 프런티어·논문 직행(paper-with-me 고유)."""
         c = conn()
         return render(request, "models.html",
-                      boards=queries.model_comparison(c))
+                      boards=queries.model_comparison(c),
+                      frontier=queries.value_frontier(c))
 
     @app.get("/models", include_in_schema=False)
     def models_alias():
