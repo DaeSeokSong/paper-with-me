@@ -478,12 +478,16 @@ def create_app(db_path: Path | None = None) -> FastAPI:
                       digest=queries.weekly_digest(c, year, week),
                       task_slugs=queries.task_slugs(c))
 
-    @app.get("/models", response_class=HTMLResponse)
-    def models(request: Request):
-        """AI 모델 비교 — Artificial Analysis 원본 4개 지표 미러."""
+    @app.get("/agents", response_class=HTMLResponse)
+    def agents(request: Request):
+        """AI Agents 비교 — Artificial Analysis 원본 4개 지표 미러."""
         c = conn()
         return render(request, "models.html",
                       boards=queries.model_comparison(c))
+
+    @app.get("/models", include_in_schema=False)
+    def models_alias():
+        return RedirectResponse("/agents", status_code=301)
 
     @app.get("/trends", response_class=HTMLResponse)
     def trends(request: Request):
