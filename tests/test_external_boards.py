@@ -15,7 +15,10 @@ AA_PAYLOAD = {"data": [
      "evaluations": {"mmlu_pro": 0.87, "gpqa": {"value": 0.71},
                      "aime": 0.92, "unknown_bench": 0.5,
                      "artificial_analysis_coding_index": 55.8,
-                     "artificial_analysis_math_index": 87.2},
+                     "artificial_analysis_math_index": 87.2,
+                     # 실응답 확정 키(2026-07-17 진단): 언더스코어 없는 표기
+                     "terminalbench_hard": 0.053,
+                     "lcr": 0.4367},
      "pricing": {"price_1m_blended_3_to_1": 1.925,
                  "price_1m_input_tokens": 1.1}},
     {"name": "SmallModel", "release_date": "2025-11-15",
@@ -43,8 +46,9 @@ def test_aa_models_mirrored_with_normalized_values(conn, monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
     added = external_boards.collect_artificial_analysis(conn)
     conn.commit()
-    # 모델1: mmlu_pro/gpqa/aime/코딩·수학 인덱스 + 혼합 가격, 모델2: mmlu_pro
-    assert added == 7
+    # 모델1: mmlu_pro/gpqa/aime/코딩·수학 인덱스/터미널벤치/LCR + 혼합 가격,
+    # 모델2: mmlu_pro
+    assert added == 9
     rows = conn.execute(
         "SELECT task, dataset, model_name, metrics, paper_date FROM sota_rows "
         "WHERE source='external' ORDER BY id").fetchall()
@@ -61,7 +65,10 @@ def test_aa_models_mirrored_with_normalized_values(conn, monkeypatch):
     assert by_ds["Artificial Analysis Math Index"] == {"Index": "87.2"}
     assert by_ds["Price per 1M Tokens (Blended 3:1)"] == {
         "USD per 1M Tokens": "1.925"}
-    assert json.loads(rows[6][3]) == {"Accuracy": "55.2"}  # SmallModel
+    # 실응답 확정 키 매핑: 분수 → 백분율
+    assert by_ds["Terminal-Bench Hard"] == {"Accuracy": "5.3"}
+    assert by_ds["AA-LCR"] == {"Accuracy": "43.7"}  # 소수 1자리 반올림
+    assert json.loads(rows[-1][3]) == {"Accuracy": "55.2"}  # SmallModel
 
 
 def test_aa_skipped_without_key(conn, monkeypatch):
