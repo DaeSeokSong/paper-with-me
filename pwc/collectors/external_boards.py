@@ -50,6 +50,16 @@ AA_BENCHMARKS = {
     "artificial_analysis_intelligence_index": (
         "Language Modelling", "Artificial Analysis Intelligence Index",
         "Index"),
+    "artificial_analysis_coding_index": (
+        "Language Modelling", "Artificial Analysis Coding Index", "Index"),
+    "artificial_analysis_math_index": (
+        "Language Modelling", "Artificial Analysis Math Index", "Index"),
+}
+# 모델 최상위 pricing 객체 → 보드. 1M 토큰당 USD 원값 유지 (백분율 아님)
+AA_PRICING = {
+    "price_1m_blended_3_to_1": (
+        "Language Modelling", "Price per 1M Tokens (Blended 3:1)",
+        "USD per 1M Tokens"),
 }
 # /models 비교 페이지용 추가 지표 — 값을 백분율 정규화하면 안 되는(raw)
 # 비용 지표와, 필드명이 유동적인 환각률은 후보 키를 여럿 둔다
@@ -148,12 +158,16 @@ def collect_artificial_analysis(conn: sqlite3.Connection) -> int:
             _insert(conn, task, dataset, metric, name, value, date,
                     AA_AREA, AA_LINK)
             added += 1
-        for key_name, spec in AA_RAW_BENCHMARKS.items():
-            # 비용 등 raw 지표 — evaluations와 모델 최상위 양쪽에서 탐색,
-            # 백분율 정규화 없이 원값 유지
+        pricing = m.get("pricing") if isinstance(m.get("pricing"), dict) \
+            else {}
+        for key_name, spec in {**AA_RAW_BENCHMARKS, **AA_PRICING}.items():
+            # 비용·가격 등 raw 지표 — evaluations/모델 최상위/pricing에서
+            # 탐색, 백분율 정규화 없이 원값 유지
             raw = evals.get(key_name)
             if raw is None:
                 raw = m.get(key_name)
+            if raw is None:
+                raw = pricing.get(key_name)
             if isinstance(raw, dict):
                 raw = raw.get("value")
             try:

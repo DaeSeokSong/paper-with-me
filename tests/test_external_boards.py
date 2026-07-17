@@ -13,7 +13,11 @@ AA_PAYLOAD = {"data": [
     {"name": "FrontierModel-1", "model_creator": {"name": "LabX"},
      "release_date": "2026-03-01",
      "evaluations": {"mmlu_pro": 0.87, "gpqa": {"value": 0.71},
-                     "aime": 0.92, "unknown_bench": 0.5}},
+                     "aime": 0.92, "unknown_bench": 0.5,
+                     "artificial_analysis_coding_index": 55.8,
+                     "artificial_analysis_math_index": 87.2},
+     "pricing": {"price_1m_blended_3_to_1": 1.925,
+                 "price_1m_input_tokens": 1.1}},
     {"name": "SmallModel", "release_date": "2025-11-15",
      "evaluations": {"mmlu_pro": 55.2}},  # 이미 백분율인 값
     {"name": None, "evaluations": {"mmlu_pro": 0.5}},  # 이름 없음 → 제외
@@ -39,7 +43,8 @@ def test_aa_models_mirrored_with_normalized_values(conn, monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
     added = external_boards.collect_artificial_analysis(conn)
     conn.commit()
-    assert added == 4  # 모델1: mmlu_pro/gpqa/aime, 모델2: mmlu_pro
+    # 모델1: mmlu_pro/gpqa/aime/코딩·수학 인덱스 + 혼합 가격, 모델2: mmlu_pro
+    assert added == 7
     rows = conn.execute(
         "SELECT task, dataset, model_name, metrics, paper_date FROM sota_rows "
         "WHERE source='external' ORDER BY id").fetchall()
@@ -50,7 +55,13 @@ def test_aa_models_mirrored_with_normalized_values(conn, monkeypatch):
     assert rows[0][4] == "2026-03-01"                     # 차트용 날짜
     # 중첩 value, 이미-백분율 값 처리
     assert json.loads(rows[1][3]) == {"Accuracy": "71"}
-    assert json.loads(rows[3][3]) == {"Accuracy": "55.2"}
+    by_ds = {r[1]: json.loads(r[3]) for r in rows}
+    # 인덱스류는 0~100 스케일 그대로, 가격은 pricing에서 raw USD
+    assert by_ds["Artificial Analysis Coding Index"] == {"Index": "55.8"}
+    assert by_ds["Artificial Analysis Math Index"] == {"Index": "87.2"}
+    assert by_ds["Price per 1M Tokens (Blended 3:1)"] == {
+        "USD per 1M Tokens": "1.925"}
+    assert json.loads(rows[6][3]) == {"Accuracy": "55.2"}  # SmallModel
 
 
 def test_aa_skipped_without_key(conn, monkeypatch):
@@ -143,6 +154,66 @@ def test_models_page_renders_four_charts_with_attribution(conn, tmp_path):
     assert "$2.75" in r.text                     # 비용은 달러 표기
     assert "AI Agents" in c.get("/").text        # 네비게이션 노출
     assert c.get("/models", follow_redirects=False).status_code == 301
+
+
+def _seed_value_frontier(conn):
+    """지능 지수 + 가격 두 지표를 가진 모델 3개 (파레토 판정 검증용)."""
+    data = [
+        ("Artificial Analysis Intelligence Index", "Index",
+         "DeepSeek-V3.2 (DeepSeek)", "58"),
+        ("Artificial Analysis Intelligence Index", "Index", "Closed-1", "70"),
+        ("Artificial Analysis Intelligence Index", "Index", "Closed-2", "40"),
+        ("Price per 1M Tokens (Blended 3:1)", "USD per 1M Tokens",
+         "DeepSeek-V3.2 (DeepSeek)", "0.48"),
+        ("Price per 1M Tokens (Blended 3:1)", "USD per 1M Tokens",
+         "Closed-1", "9"),
+        ("Price per 1M Tokens (Blended 3:1)", "USD per 1M Tokens",
+         "Closed-2", "3"),
+    ]
+    for ds, metric, model, v in data:
+        external_boards._insert(
+            conn, "Language Modelling", ds, metric, model, v,
+            "2026-03-01", "NLP", external_boards.AA_LINK)
+    conn.commit()
+
+
+def test_value_frontier_pareto(conn):
+    from app import queries
+
+    _seed_value_frontier(conn)
+    f = queries.value_frontier(conn)
+    flags = {p["model"].split(" (")[0]: p["frontier"] for p in f["points"]}
+    # 싸고 똑똑(DeepSeek)·비싸지만 최고 지능(Closed-1)은 프런티어,
+    # 더 싼 모델보다 지능이 낮은 Closed-2는 지배당해 탈락
+    assert flags["DeepSeek-V3.2"] is True
+    assert flags["Closed-1"] is True
+    assert flags["Closed-2"] is False
+    assert f["path"].startswith("M ")
+    assert any(t["label"] == "$1" for t in f["ticks"])  # 로그 축 눈금
+
+
+def test_agents_page_paper_link_frontier_and_board_link(conn):
+    """paper-with-me 고유 기능: 모델→논문 직행, 가성비 프런티어,
+    병합 리더보드 직행 링크."""
+    from app import queries
+
+    queries._agent_paper_cache.clear()
+    # 기반 버전 테크 리포트만 존재 — 'DeepSeek-V3.2'가 점진 완화로 닿아야 함
+    conn.execute(
+        "INSERT INTO papers (paper_url, title, abstract) VALUES (?,?,?)",
+        ("https://pwm.test/paper/deepseek-v3-tech-report",
+         "DeepSeek-V3 Technical Report", "We present DeepSeek-V3."))
+    _seed_value_frontier(conn)
+    db_file = conn.execute("PRAGMA database_list").fetchone()[2]
+    from pathlib import Path
+    r = TestClient(create_app(Path(db_file))).get("/agents")
+    assert r.status_code == 200
+    assert "가성비 프런티어" in r.text
+    assert "frontier-scatter" in r.text
+    assert "/paper/deepseek-v3-tech-report" in r.text        # 논문 직행
+    assert "/sota/language-modelling/price-per-1m-tokens-blended-3-1" \
+        in r.text                                            # 보드 직행
+    queries._agent_paper_cache.clear()
 
 
 def test_models_page_empty_state(tmp_path):

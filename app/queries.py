@@ -1171,23 +1171,65 @@ def stats(conn) -> dict:
 # 전체 AA는 과하고, 핵심 4개 지표만)
 MODEL_BOARDS = [
     ("Artificial Analysis Intelligence Index", "Index", False),
+    ("Artificial Analysis Coding Index", "Index", False),
+    ("Artificial Analysis Math Index", "Index", False),
     ("Humanity's Last Exam", "Accuracy", False),
     ("AA-Omniscience Hallucination Rate", "Hallucination Rate", True),
     ("Cost per Intelligence Index Task", "Cost per task (USD)", True),
+    ("Price per 1M Tokens (Blended 3:1)", "USD per 1M Tokens", True),
 ]
+
+# 모델명 → 논문 링크는 스냅샷이 갈리기 전까지 불변이므로 프로세스
+# 수명 동안 캐시한다 (새 스냅샷 배포 = 프로세스 재시작)
+_agent_paper_cache: dict[str, str | None] = {}
+
+
+def _agent_paper(conn, model_name: str) -> str | None:
+    """모델명 → 우리 DB의 테크 리포트/논문 페이지 링크.
+
+    AA는 수치만 보여주지만 우리는 논문 DB가 있다 — 수치에서 논문·코드로
+    직행하는 paper-with-me 고유 동선. 'DeepSeek-V3.2'처럼 리포트가 기반
+    버전('DeepSeek-V3')으로만 존재하는 경우가 많아 제목 매치를 꼬리부터
+    점진 완화하며, 매치 실패는 링크 없음으로 조용히 끝난다.
+    """
+    if model_name in _agent_paper_cache:
+        return _agent_paper_cache[model_name]
+    # FTS는 trigram(부분 문자열 매치) — 모델명 꼬리(버전 조각)를 점진적으로
+    # 잘라가며 제목 부분 문자열로 찾는다. 'gpt' 같은 3자 일반어까지
+    # 내려가면 오매칭이 늘어 후보는 4자 이상·최대 3회로 제한한다.
+    base = model_name.split(" (")[0].strip().replace('"', "").lower()
+    cands, s = [], base
+    while s and len(cands) < 3:
+        if len(s) >= (3 if not cands else 4):
+            cands.append(s)
+        stripped = re.sub(r"[\s\-._]+[^\s\-._]*$", "", s)
+        s = stripped if stripped != s else ""
+    url = None
+    for cand in cands:
+        row = conn.execute(
+            """SELECT p.paper_url FROM papers_fts f
+               JOIN papers p ON p.rowid = f.rowid
+               WHERE papers_fts MATCH ? ORDER BY rank LIMIT 1""",
+            (f'title:"{cand}"',)).fetchone()
+        if row and row["paper_url"]:
+            url = "/paper/" + paper_slug(row["paper_url"])
+            break
+    _agent_paper_cache[model_name] = url
+    return url
 
 
 def model_comparison(conn) -> list[dict]:
-    """외부 미러(source='external')에서 모델 비교 4개 보드를 뽑는다.
+    """외부 미러(source='external')에서 모델 비교 보드를 뽑는다.
     lower_better 보드는 오름차순 정렬. 데이터가 없으면 빈 rows."""
     out = []
     for dataset, metric, lower in MODEL_BOARDS:
         rows = conn.execute(
-            "SELECT model_name, metrics, paper_date FROM sota_rows "
+            "SELECT task, model_name, metrics, paper_date FROM sota_rows "
             "WHERE source = 'external' AND dataset = ?", (dataset,),
         ).fetchall()
-        parsed = []
+        parsed, task = [], None
         for r in rows:
+            task = task or r["task"]
             try:
                 v = float(json.loads(r["metrics"]).get(metric))
             except (TypeError, ValueError):
@@ -1195,6 +1237,66 @@ def model_comparison(conn) -> list[dict]:
             parsed.append({"model": r["model_name"], "value": v,
                            "date": r["paper_date"]})
         parsed.sort(key=lambda p: p["value"], reverse=not lower)
+        top = parsed[:25]
+        # 논문 링크는 화면에 나가는 상위 행에만 계산한다 — 전체 576개
+        # 모델에 FTS를 돌리면 첫 로드가 수 초 늘어난다 (이후는 캐시)
+        for p in top:
+            p["paper"] = _agent_paper(conn, p["model"])
+        # 병합 리더보드 직행 — 그 보드에선 논문 결과와 상용 모델이 값 순으로
+        # 한 표에 선다 (학계 SOTA vs 상용 모델 비교, 이 서비스 고유)
+        board_url = (f"/sota/{slugify(task)}/{slugify(dataset)}"
+                     if task and top else None)
         out.append({"dataset": dataset, "metric": metric,
-                    "lower_better": lower, "rows": parsed[:25]})
+                    "lower_better": lower, "rows": top,
+                    "board_url": board_url})
     return out
+
+
+def value_frontier(conn) -> dict | None:
+    """지능 지수 × 1M 토큰당 가격(혼합 3:1) 산점도 + 파레토 프런티어.
+
+    좌표는 100×56 viewBox 기준으로 서버에서 계산한다(x: 로그 축).
+    두 지표를 모두 가진 모델이 3개 미만이면 섹션을 숨긴다(None).
+    """
+    import math
+
+    def _vals(dataset: str, metric: str) -> dict[str, float]:
+        vals: dict[str, float] = {}
+        # 위치 인덱스: row_factory 유무(웹앱 Row/수집기 tuple)에 무관하게 동작
+        for r in conn.execute(
+                "SELECT model_name, metrics FROM sota_rows "
+                "WHERE source = 'external' AND dataset = ?", (dataset,)):
+            try:
+                vals[r[0]] = float(json.loads(r[1]).get(metric))
+            except (TypeError, ValueError):
+                continue
+        return vals
+
+    intel = _vals("Artificial Analysis Intelligence Index", "Index")
+    price = _vals("Price per 1M Tokens (Blended 3:1)", "USD per 1M Tokens")
+    pts = [{"model": m, "intel": v, "price": price[m]}
+           for m, v in intel.items() if price.get(m, 0) > 0]
+    if len(pts) < 3:
+        return None
+    logs = [math.log10(p["price"]) for p in pts]
+    llo, lhi = min(logs), max(logs)
+    span = (lhi - llo) or 1.0
+    ymax = max(p["intel"] for p in pts) or 1.0
+    for p in pts:
+        p["x"] = round(5 + 90 * (math.log10(p["price"]) - llo) / span, 2)
+        p["y"] = round(50 - 44 * p["intel"] / ymax, 2)
+    pts.sort(key=lambda p: (p["price"], -p["intel"]))
+    best, frontier = float("-inf"), []
+    for p in pts:
+        p["frontier"] = p["intel"] > best
+        if p["frontier"]:
+            best = p["intel"]
+            frontier.append(p)
+    path = " ".join(
+        f"{'M' if i == 0 else 'L'} {p['x']},{p['y']}"
+        for i, p in enumerate(frontier))
+    ticks = []
+    for e in range(math.ceil(llo), math.floor(lhi) + 1):
+        ticks.append({"x": round(5 + 90 * (e - llo) / span, 2),
+                      "label": f"${10 ** e:g}"})
+    return {"points": pts, "path": path, "ticks": ticks}
