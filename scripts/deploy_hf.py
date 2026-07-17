@@ -146,6 +146,9 @@ def main() -> int:
 # 빌드/기동이 이미 진행 중인 단계 — 이때의 restart는 진행 중인 빌드를
 # 대기열 맨 뒤로 되돌려, 연속 배포 시 빌드가 영영 끝나지 않는다
 _IN_PROGRESS_STAGES = {"BUILDING", "RUNNING_BUILDING", "APP_STARTING"}
+# 실패로 멈춘 단계 — 일반 restart는 기존(실패한) 이미지를 다시 띄우려
+# 하므로, 이미지를 새로 빌드하는 factory reboot가 필요하다
+_ERROR_STAGES = {"BUILD_ERROR", "RUNTIME_ERROR"}
 
 
 def restart_for_data(api, space_repo: str) -> None:
@@ -163,8 +166,42 @@ def restart_for_data(api, space_repo: str) -> None:
     if stage in _IN_PROGRESS_STAGES:
         print(f"[deploy] 빌드/기동 진행 중({stage}) — 재시작 생략", flush=True)
         return
+    if stage in _ERROR_STAGES:
+        print(f"[deploy] 실패 상태({stage}) — factory reboot로 재빌드 시도",
+              flush=True)
+        api.restart_space(space_repo, factory_reboot=True)
+        return
     api.restart_space(space_repo)
     print("[deploy] Space 재시작 요청 완료", flush=True)
+
+
+def dump_space_logs(space_repo: str, kind: str) -> None:
+    """Space 빌드/런 로그를 CI 로그로 흘려보낸다 (BUILD_ERROR 진단용).
+
+    개발 환경에서는 프록시가 huggingface.co를 차단해 Space 로그를 직접
+    볼 수 없다 — 실패 시 CI 로그가 유일한 진단 창구다. 로그 엔드포인트는
+    SSE 스트림이라 60초/500줄 상한으로 끊는다.
+    """
+    token = os.environ.get("HF_TOKEN")
+    url = f"https://huggingface.co/api/spaces/{space_repo}/logs/{kind}"
+    req = urllib.request.Request(
+        url, headers={"Authorization": f"Bearer {token}"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            deadline = time.time() + 60
+            print(f"[deploy] --- Space {kind} 로그 ---", flush=True)
+            for _ in range(500):
+                if time.time() > deadline:
+                    break
+                line = resp.readline()
+                if not line:
+                    break
+                text = line.decode(errors="replace").strip()
+                if text.startswith("data:"):
+                    print(f"[space:{kind}] {text[5:].strip()}", flush=True)
+            print(f"[deploy] --- Space {kind} 로그 끝 ---", flush=True)
+    except Exception as e:  # noqa: BLE001 - 진단 실패가 배포 결과를 바꾸면 안 됨
+        print(f"[deploy] Space {kind} 로그 조회 실패: {e}", flush=True)
 
 
 def wait_for_space(api, space_repo: str, timeout: int = 5100) -> bool:
@@ -192,6 +229,10 @@ def wait_for_space(api, space_repo: str, timeout: int = 5100) -> bool:
               f"(경과 {int(time.time() - start) // 60}분)", flush=True)
         if str(stage) in ("BUILD_ERROR", "RUNTIME_ERROR", "STOPPED", "PAUSED"):
             print("[deploy] Space가 실패 상태입니다. Space 로그를 확인하세요.")
+            if str(stage) == "BUILD_ERROR":
+                dump_space_logs(space_repo, "build")
+            elif str(stage) == "RUNTIME_ERROR":
+                dump_space_logs(space_repo, "run")
             return False
         if str(stage) == "RUNNING":
             try:
