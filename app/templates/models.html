@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}AI Models · paper-with-me{% endblock %}
+{% block content %}
+<h1>AI Models <span class="muted">프런티어 모델 비교</span></h1>
+{# 원본 고지 (사용자 요청): 전 수치의 출처는 Artificial Analysis #}
+<p class="muted">이 페이지의 모든 수치는
+<a href="https://artificialanalysis.ai/" rel="noopener"><b>Artificial
+Analysis</b></a>가 독립적으로 벤치마크한 <b>원본 데이터의 미러</b>입니다
+(핵심 4개 지표만 발췌 · 매일 갱신). 전체 지표와 방법론은 원본 사이트를
+참고하세요.</p>
+
+{% set has_data = boards | selectattr("rows") | list %}
+{% if not has_data %}
+<div class="card">
+  <p>외부 리더보드 데이터가 아직 수집되지 않았습니다. 리포 시크릿에
+  <code>AA_API_KEY</code>(무료 발급:
+  <a href="https://artificialanalysis.ai/api" rel="noopener">artificialanalysis.ai/api</a>)를
+  등록하면 다음 일일 수집(UTC 00시)부터 이 페이지가 채워집니다.</p>
+</div>
+{% endif %}
+
+{% for b in boards %}
+{% if b.rows %}
+<h2 class="area-title" lang="en">{{ b.dataset }}
+  {% if b.lower_better %}<span class="badge">낮을수록 좋음</span>{% endif %}
+</h2>
+<p class="muted">{{ b.metric }} · 상위 {{ b.rows | length }}개 모델</p>
+{% set mx = (b.rows | map(attribute="value") | max) or 1 %}
+<div class="model-bars">
+  {% for r in b.rows %}
+  <div class="model-bar-row">
+    <span class="model-name" lang="en">{{ r.model }}</span>
+    <div class="model-bar-track">
+      <div class="model-bar" style="width: {{ '%.1f' | format(100 * r.value / mx) }}%"></div>
+    </div>
+    <span class="model-value">{% if 'USD' in b.metric %}${{ r.value }}{% else %}{{ r.value }}{% if 'Rate' in b.metric or b.dataset == "Humanity's Last Exam" %}%{% endif %}{% endif %}</span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endfor %}
+
+<p class="muted">데이터: <a href="https://artificialanalysis.ai/"
+rel="noopener">Artificial Analysis</a> (원본) · 본 미러는 표기 조건에 따라
+출처를 명시하며, 행 단위 데이터는 각 벤치마크 리더보드 페이지에서도
+"외부" 배지로 제공됩니다.</p>
+{% endblock %}

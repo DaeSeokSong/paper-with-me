@@ -113,3 +113,61 @@ def test_external_rows_render_with_badge_and_value_merge(conn, tmp_path):
     import re
     first = re.search(r"<b>([^<]+)</b>", r.text).group(1)
     assert first == "FrontierModel-1"
+
+
+def test_models_page_renders_four_charts_with_attribution(conn, tmp_path):
+    """/models — AA 원본 4개 지표만 미러, 출처 고지 필수 (사용자 요청)."""
+    data = [
+        ("Artificial Analysis Intelligence Index", "Index", "M1", "60"),
+        ("Artificial Analysis Intelligence Index", "Index", "M2", "59"),
+        ("Humanity's Last Exam", "Accuracy", "M1", "53.3"),
+        ("AA-Omniscience Hallucination Rate", "Hallucination Rate",
+         "M2", "14"),
+        ("Cost per Intelligence Index Task", "Cost per task (USD)",
+         "M1", "2.75"),
+    ]
+    for ds, metric, model, v in data:
+        external_boards._insert(
+            conn, "Language Modelling", ds, metric, model, v,
+            "2026-03-01", "NLP", external_boards.AA_LINK)
+    conn.commit()
+    db_file = conn.execute("PRAGMA database_list").fetchone()[2]
+    from pathlib import Path
+    c = TestClient(create_app(Path(db_file)))
+    r = c.get("/models")
+    assert r.status_code == 200
+    assert "Artificial Analysis" in r.text       # 원본 고지
+    assert "원본 데이터의 미러" in r.text
+    assert "Last Exam" in r.text  # (아포스트로피는 HTML 이스케이프됨)
+    assert "낮을수록 좋음" in r.text              # 환각률/비용 배지
+    assert "$2.75" in r.text                     # 비용은 달러 표기
+    assert "AI Models" in c.get("/").text        # 네비게이션 노출
+
+
+def test_models_page_empty_state(tmp_path):
+    db2 = tmp_path / "empty.sqlite"
+    pwc_db.connect(db2).close()
+    r = TestClient(create_app(db2)).get("/models")
+    assert r.status_code == 200
+    assert "AA_API_KEY" in r.text  # 데이터 없을 때 설정 안내
+
+
+def test_aa_raw_cost_not_percent_normalized(conn, monkeypatch):
+    """비용(달러) 값은 0~1이어도 백분율로 변환하면 안 된다."""
+    monkeypatch.setenv("AA_API_KEY", "k")
+    payload = {"data": [{"name": "M", "release_date": "2026-01-01",
+                         "evaluations": {
+                             "cost_per_intelligence_index_task": 0.37}}]}
+
+    def fake_urlopen(req, timeout=0):
+        import io
+        return io.BytesIO(json.dumps(payload).encode())
+
+    import urllib.request
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    external_boards.collect_artificial_analysis(conn)
+    conn.commit()
+    row = conn.execute(
+        "SELECT metrics FROM sota_rows WHERE dataset="
+        "'Cost per Intelligence Index Task'").fetchone()
+    assert json.loads(row[0]) == {"Cost per task (USD)": "0.37"}

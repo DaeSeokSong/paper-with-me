@@ -51,6 +51,25 @@ AA_BENCHMARKS = {
         "Language Modelling", "Artificial Analysis Intelligence Index",
         "Index"),
 }
+# /models 비교 페이지용 추가 지표 — 값을 백분율 정규화하면 안 되는(raw)
+# 비용 지표와, 필드명이 유동적인 환각률은 후보 키를 여럿 둔다
+AA_RAW_BENCHMARKS = {
+    "cost_per_intelligence_index_task": (
+        "Language Modelling", "Cost per Intelligence Index Task",
+        "Cost per task (USD)"),
+    "intelligence_index_cost": (
+        "Language Modelling", "Cost per Intelligence Index Task",
+        "Cost per task (USD)"),
+}
+AA_PCT_EXTRA = {
+    "aa_omniscience_hallucination_rate": (
+        "Language Modelling", "AA-Omniscience Hallucination Rate",
+        "Hallucination Rate"),
+    "omniscience_hallucination_rate": (
+        "Language Modelling", "AA-Omniscience Hallucination Rate",
+        "Hallucination Rate"),
+}
+AA_BENCHMARKS.update(AA_PCT_EXTRA)
 AA_AREA = "Natural Language Processing"
 
 
@@ -108,16 +127,37 @@ def collect_artificial_analysis(conn: sqlite3.Connection) -> int:
         evals = m.get("evaluations") or {}
         if not isinstance(evals, dict):
             continue
+        seen_ds: set[str] = set()
         for key_name, spec in AA_BENCHMARKS.items():
             raw = evals.get(key_name)
             # 중첩({"value": ...}) 형태 방어
             if isinstance(raw, dict):
                 raw = raw.get("value") or raw.get("score")
             value = _pct(raw)
-            if value is None:
+            task, dataset, metric = spec
+            if value is None or dataset in seen_ds:
+                continue
+            seen_ds.add(dataset)
+            _insert(conn, task, dataset, metric, name, value, date,
+                    AA_AREA, AA_LINK)
+            added += 1
+        for key_name, spec in AA_RAW_BENCHMARKS.items():
+            # 비용 등 raw 지표 — evaluations와 모델 최상위 양쪽에서 탐색,
+            # 백분율 정규화 없이 원값 유지
+            raw = evals.get(key_name)
+            if raw is None:
+                raw = m.get(key_name)
+            if isinstance(raw, dict):
+                raw = raw.get("value")
+            try:
+                v = float(raw)  # type: ignore[arg-type]
+            except (TypeError, ValueError):
                 continue
             task, dataset, metric = spec
-            _insert(conn, task, dataset, metric, name, value, date,
+            if dataset in seen_ds:
+                continue
+            seen_ds.add(dataset)
+            _insert(conn, task, dataset, metric, name, f"{v:g}", date,
                     AA_AREA, AA_LINK)
             added += 1
     print(f"[external] Artificial Analysis: 모델 {len(models)}개 → "

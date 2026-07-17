@@ -1163,3 +1163,38 @@ def stats(conn) -> dict:
         "SELECT COUNT(DISTINCT task) AS n FROM sota_rows"
     ).fetchone()["n"]
     return out
+
+
+# ------------------------------------------------------- AI 모델 비교
+
+# /models 페이지 — Artificial Analysis 원본 4개 차트만 미러 (사용자 요청:
+# 전체 AA는 과하고, 핵심 4개 지표만)
+MODEL_BOARDS = [
+    ("Artificial Analysis Intelligence Index", "Index", False),
+    ("Humanity's Last Exam", "Accuracy", False),
+    ("AA-Omniscience Hallucination Rate", "Hallucination Rate", True),
+    ("Cost per Intelligence Index Task", "Cost per task (USD)", True),
+]
+
+
+def model_comparison(conn) -> list[dict]:
+    """외부 미러(source='external')에서 모델 비교 4개 보드를 뽑는다.
+    lower_better 보드는 오름차순 정렬. 데이터가 없으면 빈 rows."""
+    out = []
+    for dataset, metric, lower in MODEL_BOARDS:
+        rows = conn.execute(
+            "SELECT model_name, metrics, paper_date FROM sota_rows "
+            "WHERE source = 'external' AND dataset = ?", (dataset,),
+        ).fetchall()
+        parsed = []
+        for r in rows:
+            try:
+                v = float(json.loads(r["metrics"]).get(metric))
+            except (TypeError, ValueError):
+                continue
+            parsed.append({"model": r["model_name"], "value": v,
+                           "date": r["paper_date"]})
+        parsed.sort(key=lambda p: p["value"], reverse=not lower)
+        out.append({"dataset": dataset, "metric": metric,
+                    "lower_better": lower, "rows": parsed[:25]})
+    return out
