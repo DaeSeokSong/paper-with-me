@@ -43,10 +43,22 @@ AA_BENCHMARKS = {
     "aime": ("Math Word Problem Solving", "AIME 2025", "Accuracy"),
     "aime_25": ("Math Word Problem Solving", "AIME 2025", "Accuracy"),
     "ifbench": ("Instruction Following", "IFBench", "Accuracy"),
+    # 실제 응답 키는 'terminalbench_hard' (2026-07-17 진단 로그로 확정 —
+    # 언더스코어 추정 키 'terminal_bench_hard'는 매치되지 않아 보드가
+    # 비어 있었다). 과거 표기도 alias로 유지한다.
+    "terminalbench_hard": ("Code Generation", "Terminal-Bench Hard",
+                           "Accuracy"),
     "terminal_bench_hard": ("Code Generation", "Terminal-Bench Hard",
                             "Accuracy"),
+    "terminalbench_v2_1": ("Code Generation", "Terminal-Bench v2.1",
+                           "Accuracy"),
+    "tau2": ("Task-Oriented Dialogue Systems",
+             "Tau2-Bench Telecom", "Accuracy"),
     "tau2_bench_telecom": ("Task-Oriented Dialogue Systems",
                            "Tau2-Bench Telecom", "Accuracy"),
+    "tau_banking": ("Task-Oriented Dialogue Systems",
+                    "Tau3-Banking", "Accuracy"),
+    "lcr": ("Long-Context Understanding", "AA-LCR", "Accuracy"),
     "artificial_analysis_intelligence_index": (
         "Language Modelling", "Artificial Analysis Intelligence Index",
         "Index"),
