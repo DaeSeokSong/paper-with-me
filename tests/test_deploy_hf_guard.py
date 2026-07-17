@@ -40,3 +40,45 @@ def test_sync_space_creates_when_missing():
     api = FakeApi(exists=False)
     deploy_hf.sync_space(api, "u/space", "u/data")
     assert "create_repo" in api.calls
+
+
+class FakeRuntimeApi:
+    """restart_for_data 가드용 — 빌드 중 restart는 빌드를 재큐잉해
+    RUNNING_BUILDING이 끝나지 않는 실사고가 있었다."""
+
+    def __init__(self, stage):
+        self.stage = stage
+        self.calls: list[str] = []
+
+    def get_space_runtime(self, repo_id):
+        if isinstance(self.stage, Exception):
+            raise self.stage
+
+        class _RT:
+            pass
+
+        rt = _RT()
+        rt.stage = self.stage
+        return rt
+
+    def restart_space(self, repo_id):
+        self.calls.append("restart_space")
+
+
+def test_restart_skipped_while_building():
+    for stage in ("BUILDING", "RUNNING_BUILDING", "APP_STARTING"):
+        api = FakeRuntimeApi(stage)
+        deploy_hf.restart_for_data(api, "u/space")
+        assert "restart_space" not in api.calls, stage
+
+
+def test_restart_runs_when_running():
+    api = FakeRuntimeApi("RUNNING")
+    deploy_hf.restart_for_data(api, "u/space")
+    assert api.calls == ["restart_space"]
+
+
+def test_restart_runs_when_stage_probe_fails():
+    api = FakeRuntimeApi(RuntimeError("api down"))
+    deploy_hf.restart_for_data(api, "u/space")
+    assert api.calls == ["restart_space"]  # 조회 실패 시 기존 동작 유지

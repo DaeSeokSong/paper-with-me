@@ -37,7 +37,7 @@ jobs:
     if: github.event_name != 'workflow_run'
         || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 90  # 13GB 데이터 업로드 + Space 빌드/기동 대기 포함
+    timeout-minutes: 120  # 데이터 업로드 + Space 빌드/기동 대기(최장 85분) 포함
     env:
       PYTHONUNBUFFERED: "1"
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
