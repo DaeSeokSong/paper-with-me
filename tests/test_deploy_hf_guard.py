@@ -61,15 +61,16 @@ class FakeRuntimeApi:
         rt.stage = self.stage
         return rt
 
-    def restart_space(self, repo_id):
-        self.calls.append("restart_space")
+    def restart_space(self, repo_id, factory_reboot=False):
+        self.calls.append(
+            "factory_reboot" if factory_reboot else "restart_space")
 
 
 def test_restart_skipped_while_building():
     for stage in ("BUILDING", "RUNNING_BUILDING", "APP_STARTING"):
         api = FakeRuntimeApi(stage)
         deploy_hf.restart_for_data(api, "u/space")
-        assert "restart_space" not in api.calls, stage
+        assert api.calls == [], stage
 
 
 def test_restart_runs_when_running():
@@ -82,3 +83,12 @@ def test_restart_runs_when_stage_probe_fails():
     api = FakeRuntimeApi(RuntimeError("api down"))
     deploy_hf.restart_for_data(api, "u/space")
     assert api.calls == ["restart_space"]  # 조회 실패 시 기존 동작 유지
+
+
+def test_error_stage_triggers_factory_reboot():
+    """일반 restart는 실패한 기존 이미지를 재사용한다 — BUILD_ERROR에서는
+    이미지를 새로 빌드하는 factory reboot여야 복구된다."""
+    for stage in ("BUILD_ERROR", "RUNTIME_ERROR"):
+        api = FakeRuntimeApi(stage)
+        deploy_hf.restart_for_data(api, "u/space")
+        assert api.calls == ["factory_reboot"], stage
