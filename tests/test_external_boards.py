@@ -134,20 +134,21 @@ def test_models_page_renders_four_charts_with_attribution(conn, tmp_path):
     db_file = conn.execute("PRAGMA database_list").fetchone()[2]
     from pathlib import Path
     c = TestClient(create_app(Path(db_file)))
-    r = c.get("/models")
+    r = c.get("/agents")
     assert r.status_code == 200
     assert "Artificial Analysis" in r.text       # 원본 고지
     assert "원본 데이터의 미러" in r.text
     assert "Last Exam" in r.text  # (아포스트로피는 HTML 이스케이프됨)
     assert "낮을수록 좋음" in r.text              # 환각률/비용 배지
     assert "$2.75" in r.text                     # 비용은 달러 표기
-    assert "AI Models" in c.get("/").text        # 네비게이션 노출
+    assert "AI Agents" in c.get("/").text        # 네비게이션 노출
+    assert c.get("/models", follow_redirects=False).status_code == 301
 
 
 def test_models_page_empty_state(tmp_path):
     db2 = tmp_path / "empty.sqlite"
     pwc_db.connect(db2).close()
-    r = TestClient(create_app(db2)).get("/models")
+    r = TestClient(create_app(db2)).get("/agents")
     assert r.status_code == 200
     assert "AA_API_KEY" in r.text  # 데이터 없을 때 설정 안내
 

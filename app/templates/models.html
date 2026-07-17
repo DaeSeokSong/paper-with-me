@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}AI Models · paper-with-me{% endblock %}
+{% block title %}AI Agents · paper-with-me{% endblock %}
 {% block content %}
-<h1>AI Models <span class="muted">프런티어 모델 비교</span></h1>
+<h1>AI Agents <span class="muted">프런티어 모델·에이전트 비교</span></h1>
 {# 원본 고지 (사용자 요청): 전 수치의 출처는 Artificial Analysis #}
 <p class="muted">이 페이지의 모든 수치는
 <a href="https://artificialanalysis.ai/" rel="noopener"><b>Artificial
 Analysis</b></a>가 독립적으로 벤치마크한 <b>원본 데이터의 미러</b>입니다
-(핵심 4개 지표만 발췌 · 매일 갱신). 전체 지표와 방법론은 원본 사이트를
+(핵심 4개 지표만 발췌 · 매일 UTC 00시 갱신). 전체 지표와 방법론은 원본 사이트를
 참고하세요.</p>
 
 {% set has_data = boards | selectattr("rows") | list %}
