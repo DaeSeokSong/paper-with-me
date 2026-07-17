@@ -14,6 +14,13 @@ on:
     paths:
       - ".github/workflows/update-data.yml"
       - "pwc/collectors/**"
+  # 전체 재빌드(build-data) 완료 후 연쇄 실행 — 같은 push가 두 워크플로를
+  # 동시에 트리거하면 snapshot-writers 대기 1슬롯을 놓고 update-data가
+  # 취소되는 실사고(#23·#24 머지)가 있었다. 재빌드 뒤에 수집이 따라오면
+  # 취소가 손실이 아니라 '재빌드 → 수집 → 배포' 순차 실행이 된다.
+  workflow_run:
+    workflows: ["Build data snapshot"]
+    types: [completed]
 
 permissions:
   contents: read
@@ -27,6 +34,10 @@ concurrency:
 
 jobs:
   update:
+    # 연쇄 실행일 때는 재빌드가 성공한 경우에만 — 실패한 빌드 뒤의 수집은
+    # 아티팩트 필터가 옛 스냅샷을 고르므로 낭비다
+    if: github.event_name != 'workflow_run'
+        || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
