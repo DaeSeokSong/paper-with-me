@@ -134,8 +134,7 @@ def main() -> int:
         # 코드 동기화가 실패해도, 데이터가 갱신됐다면 재시작으로 새 스냅샷을
         # 반영한다 (bootstrap이 시작 시 최신 revision을 내려받는다)
         if data_updated:
-            api.restart_space(space_repo)
-            print("[deploy] Space 재시작 요청 완료", flush=True)
+            restart_for_data(api, space_repo)
 
     if not wait_for_space(api, space_repo):
         return 1
@@ -144,11 +143,40 @@ def main() -> int:
     return 0
 
 
-def wait_for_space(api, space_repo: str, timeout: int = 1800) -> bool:
-    """Space가 빌드→기동을 마치고 실제 HTTP 200을 돌려줄 때까지 대기한다."""
+# 빌드/기동이 이미 진행 중인 단계 — 이때의 restart는 진행 중인 빌드를
+# 대기열 맨 뒤로 되돌려, 연속 배포 시 빌드가 영영 끝나지 않는다
+_IN_PROGRESS_STAGES = {"BUILDING", "RUNNING_BUILDING", "APP_STARTING"}
+
+
+def restart_for_data(api, space_repo: str) -> None:
+    """새 데이터 스냅샷 반영용 재시작 — 빌드/기동 중이면 생략한다.
+
+    무료 티어에서 Space 빌드가 수십 분 걸리는 동안 다음 배포가
+    restart_space를 호출하면 빌드가 재큐잉돼 RUNNING_BUILDING이 1시간 넘게
+    이어지는 실사고가 있었다. 진행 중인 빌드가 끝나면 bootstrap이 시작
+    시점에 최신 스냅샷을 내려받으므로 재시작 없이도 데이터는 반영된다.
+    """
+    try:
+        stage = str(getattr(api.get_space_runtime(space_repo), "stage", None))
+    except Exception as e:  # noqa: BLE001 - 조회 실패 시 기존 동작(재시작) 유지
+        stage = f"조회 실패: {e}"
+    if stage in _IN_PROGRESS_STAGES:
+        print(f"[deploy] 빌드/기동 진행 중({stage}) — 재시작 생략", flush=True)
+        return
+    api.restart_space(space_repo)
+    print("[deploy] Space 재시작 요청 완료", flush=True)
+
+
+def wait_for_space(api, space_repo: str, timeout: int = 5100) -> bool:
+    """Space가 빌드→기동을 마치고 실제 HTTP 200을 돌려줄 때까지 대기한다.
+
+    무료 티어 빌드 대기열 지연으로 30분(1800s)이 모자라 배포가 연속
+    타임아웃된 적이 있다 — 워크플로 잡 한도(120분) 안에서 85분까지 기다린다.
+    """
     user, name = space_repo.split("/")
     url = f"https://{user.lower()}-{name.lower()}.hf.space/"
-    deadline = time.time() + timeout
+    start = time.time()
+    deadline = start + timeout
     probe_errors = 0
     while time.time() < deadline:
         try:
@@ -160,7 +188,8 @@ def wait_for_space(api, space_repo: str, timeout: int = 1800) -> bool:
             if probe_errors >= 10:
                 print("[deploy] Space 상태 조회가 계속 실패합니다", flush=True)
                 return False
-        print(f"[deploy] Space 상태: {stage}", flush=True)
+        print(f"[deploy] Space 상태: {stage} "
+              f"(경과 {int(time.time() - start) // 60}분)", flush=True)
         if str(stage) in ("BUILD_ERROR", "RUNTIME_ERROR", "STOPPED", "PAUSED"):
             print("[deploy] Space가 실패 상태입니다. Space 로그를 확인하세요.")
             return False
