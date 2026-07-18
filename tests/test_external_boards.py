@@ -248,6 +248,22 @@ def test_agents_page_paper_link_frontier_and_board_link(conn):
     queries._agent_paper_cache.clear()
 
 
+def test_agents_page_compact_layout(conn):
+    """스크롤 부담 완화 UI: 바로가기 칩 + 카드 그리드 + 11번째 행부터 접기."""
+    for i in range(12):
+        external_boards._insert(
+            conn, "Language Modelling",
+            "Artificial Analysis Intelligence Index", "Index",
+            f"M{i}", str(70 - i), "2026-03-01", "NLP", external_boards.AA_LINK)
+    conn.commit()
+    db_file = conn.execute("PRAGMA database_list").fetchone()[2]
+    from pathlib import Path
+    r = TestClient(create_app(Path(db_file))).get("/agents")
+    assert r.status_code == 200
+    assert "board-nav" in r.text and "model-grid" in r.text
+    assert "나머지 2개 보기" in r.text  # 상위 10개 이후는 접힘
+
+
 def test_models_page_empty_state(tmp_path):
     db2 = tmp_path / "empty.sqlite"
     pwc_db.connect(db2).close()
