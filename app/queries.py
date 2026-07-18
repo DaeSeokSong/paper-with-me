@@ -1201,10 +1201,15 @@ MODEL_BOARDS = [
      "desc": "Intelligence Index 평가 태스크 1건을 수행하는 데 드는 평균 "
              "비용(USD). 토큰 단가와 응답 길이를 함께 반영합니다."},
     {"dataset": "Price per 1M Tokens (Blended 3:1)",
-     "metric": "USD per 1M Tokens", "order": "desc", "badge": "비싼 순",
+     "metric": "USD per 1M Tokens", "order": "asc",
+     "badge": "지능 상위 25 · 싼 순",
+     # 전체 576개 중 가격순 상위/하위는 구형 고가 모델·무명 저가 모델만
+     # 노출된다(사용자 피드백: Fable·Sol이 안 보임) — 지능 지수 상위
+     # 25개 모델로 대상을 좁혀 '지금 쓸 만한 모델의 가격'만 보여준다
+     "top_by": ("Artificial Analysis Intelligence Index", "Index"),
      "desc": "입력:출력 3:1 혼합 기준 1백만 토큰당 API 가격(USD). "
-             "프런티어(고가) 모델부터 보이도록 비싼 순으로 정렬했습니다 — "
-             "사용료 관점에서는 물론 낮을수록 좋습니다."},
+             "Intelligence Index 상위 25개 프런티어 모델만 대상으로, "
+             "같은 급에서 무엇이 싼지 비교합니다."},
 ]
 
 # 모델명 → 논문 링크는 스냅샷이 갈리기 전까지 불변이므로 프로세스
@@ -1247,29 +1252,41 @@ def _agent_paper(conn, model_name: str) -> str | None:
     return url
 
 
+def _board_rows(conn, dataset: str, metric: str) -> tuple[list[dict], str]:
+    rows = conn.execute(
+        "SELECT task, model_name, metrics, paper_date FROM sota_rows "
+        "WHERE source = 'external' AND dataset = ?", (dataset,),
+    ).fetchall()
+    parsed, task = [], None
+    for r in rows:
+        task = task or r["task"]
+        try:
+            v = float(json.loads(r["metrics"]).get(metric))
+        except (TypeError, ValueError):
+            continue
+        # 가격/비용 0은 '미책정' — 구 스냅샷에 남은 0행이 보드를
+        # $0로 도배하지 않게 읽기 시점에도 거른다
+        if v <= 0 and "USD" in metric:
+            continue
+        parsed.append({"model": r["model_name"], "value": v,
+                       "date": r["paper_date"]})
+    return parsed, task
+
+
 def model_comparison(conn) -> list[dict]:
     """외부 미러(source='external')에서 모델 비교 보드를 뽑는다.
-    보드별 order(asc/desc)로 정렬. 데이터가 없으면 빈 rows."""
+    보드별 order(asc/desc)로 정렬, top_by가 있으면 해당 지표 상위 25개
+    모델로 대상을 좁힌다. 데이터가 없으면 빈 rows."""
     out = []
     for board in MODEL_BOARDS:
         dataset, metric = board["dataset"], board["metric"]
-        rows = conn.execute(
-            "SELECT task, model_name, metrics, paper_date FROM sota_rows "
-            "WHERE source = 'external' AND dataset = ?", (dataset,),
-        ).fetchall()
-        parsed, task = [], None
-        for r in rows:
-            task = task or r["task"]
-            try:
-                v = float(json.loads(r["metrics"]).get(metric))
-            except (TypeError, ValueError):
-                continue
-            # 가격/비용 0은 '미책정' — 구 스냅샷에 남은 0행이 보드를
-            # $0로 도배하지 않게 읽기 시점에도 거른다
-            if v <= 0 and "USD" in metric:
-                continue
-            parsed.append({"model": r["model_name"], "value": v,
-                           "date": r["paper_date"]})
+        parsed, task = _board_rows(conn, dataset, metric)
+        if board.get("top_by"):
+            ref, ref_metric = board["top_by"]
+            ref_rows, _ = _board_rows(conn, ref, ref_metric)
+            ref_rows.sort(key=lambda p: p["value"], reverse=True)
+            allowed = {p["model"] for p in ref_rows[:25]}
+            parsed = [p for p in parsed if p["model"] in allowed]
         parsed.sort(key=lambda p: p["value"],
                     reverse=board["order"] == "desc")
         top = parsed[:25]
@@ -1357,6 +1374,45 @@ def value_frontier(conn,
               for t in range(ystep, int(ymax) + 1, ystep)]
     return {"points": pts, "path": path, "ticks": ticks, "yticks": yticks,
             "label": label}
+
+
+# 클라이언트 수치 필터("지표 X가 Y 이상/미만")에 노출할 지표들
+AGENT_FILTER_METRICS = [
+    ("Artificial Analysis Intelligence Index", "Index",
+     "Intelligence Index"),
+    ("Artificial Analysis Coding Index", "Index", "Coding Index"),
+    ("Humanity's Last Exam", "Accuracy", "Humanity's Last Exam (%)"),
+    ("AA-Omniscience Hallucination Rate", "Hallucination Rate",
+     "Hallucination Rate (%)"),
+    ("Price per 1M Tokens (Blended 3:1)", "USD per 1M Tokens",
+     "Price (USD/1M)"),
+]
+
+
+def agent_metric_map(conn) -> dict:
+    """모델별 지표 값 맵 — /agents의 수치 필터가 클라이언트에서 쓴다.
+
+    {"labels": [지표명...], "models": {소문자 모델명: {지표명: 값}}}.
+    데이터가 있는 지표만 labels에 올라 필터 셀렉트에 노출된다.
+    """
+    models: dict[str, dict[str, float]] = {}
+    labels: list[str] = []
+    for ds, metric, label in AGENT_FILTER_METRICS:
+        found = False
+        for r in conn.execute(
+                "SELECT model_name, metrics FROM sota_rows "
+                "WHERE source = 'external' AND dataset = ?", (ds,)):
+            try:
+                v = float(json.loads(r[1]).get(metric))
+            except (TypeError, ValueError):
+                continue
+            if v <= 0 and "USD" in metric:
+                continue
+            models.setdefault(r[0].lower(), {})[label] = v
+            found = True
+        if found:
+            labels.append(label)
+    return {"labels": labels, "models": models}
 
 
 def value_frontiers(conn) -> list[dict]:

@@ -487,7 +487,8 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         # 점들이 추가 FTS 없이 논문 링크를 얻는다
         boards = queries.model_comparison(c)
         return render(request, "models.html", boards=boards,
-                      frontiers=queries.value_frontiers(c))
+                      frontiers=queries.value_frontiers(c),
+                      filters=queries.agent_metric_map(c))
 
     @app.get("/models", include_in_schema=False)
     def models_alias():
