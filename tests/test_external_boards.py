@@ -22,7 +22,11 @@ AA_PAYLOAD = {"data": [
      "pricing": {"price_1m_blended_3_to_1": 1.925,
                  "price_1m_input_tokens": 1.1}},
     {"name": "SmallModel", "release_date": "2025-11-15",
-     "evaluations": {"mmlu_pro": 55.2}},  # 이미 백분율인 값
+     # 인덱스 1.2 이하 — ×100 정규화하면 안 됨 (Gemma 3n 실사고),
+     # 가격 0 — '미책정'이라 행을 만들면 안 됨 (가격 보드 $0 도배 실사고)
+     "evaluations": {"mmlu_pro": 55.2,  # 이미 백분율인 값
+                     "artificial_analysis_intelligence_index": 0.9},
+     "pricing": {"price_1m_blended_3_to_1": 0}},
     {"name": None, "evaluations": {"mmlu_pro": 0.5}},  # 이름 없음 → 제외
 ]}
 
@@ -46,9 +50,9 @@ def test_aa_models_mirrored_with_normalized_values(conn, monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
     added = external_boards.collect_artificial_analysis(conn)
     conn.commit()
-    # 모델1: mmlu_pro/gpqa/aime/코딩·수학 인덱스/터미널벤치/LCR + 혼합 가격,
-    # 모델2: mmlu_pro
-    assert added == 9
+    # 모델1: mmlu_pro/gpqa/aime/터미널벤치/LCR + 코딩·수학 인덱스·혼합 가격,
+    # 모델2: mmlu_pro + 지능 인덱스(0.9 raw) — 가격 0은 제외
+    assert added == 10
     rows = conn.execute(
         "SELECT task, dataset, model_name, metrics, paper_date FROM sota_rows "
         "WHERE source='external' ORDER BY id").fetchall()
@@ -68,7 +72,12 @@ def test_aa_models_mirrored_with_normalized_values(conn, monkeypatch):
     # 실응답 확정 키 매핑: 분수 → 백분율
     assert by_ds["Terminal-Bench Hard"] == {"Accuracy": "5.3"}
     assert by_ds["AA-LCR"] == {"Accuracy": "43.7"}  # 소수 1자리 반올림
-    assert json.loads(rows[-1][3]) == {"Accuracy": "55.2"}  # SmallModel
+    small = {r[1]: json.loads(r[3]) for r in rows
+             if r[2].startswith("SmallModel")}
+    assert small["MMLU-Pro"] == {"Accuracy": "55.2"}
+    # 인덱스 1.2 이하도 raw 유지 (×100 금지), 가격 0은 행 자체가 없어야 함
+    assert small["Artificial Analysis Intelligence Index"] == {"Index": "0.9"}
+    assert "Price per 1M Tokens (Blended 3:1)" not in small
 
 
 def test_aa_skipped_without_key(conn, monkeypatch):
@@ -188,7 +197,19 @@ def test_value_frontier_pareto(conn):
     from app import queries
 
     _seed_value_frontier(conn)
+    # 가격 0(미책정) 모델은 산점도에서 제외되어야 한다
+    external_boards._insert(
+        conn, "Language Modelling", "Artificial Analysis Intelligence Index",
+        "Index", "FreeModel", "50", "2026-03-01", "NLP",
+        external_boards.AA_LINK)
+    external_boards._insert(
+        conn, "Language Modelling", "Price per 1M Tokens (Blended 3:1)",
+        "USD per 1M Tokens", "FreeModel", "0", "2026-03-01", "NLP",
+        external_boards.AA_LINK)
+    conn.commit()
     f = queries.value_frontier(conn)
+    assert all(p["model"] != "FreeModel" for p in f["points"])
+    assert f["yticks"] and f["yticks"][-1]["label"] <= 70  # Y축 눈금 존재
     flags = {p["model"].split(" (")[0]: p["frontier"] for p in f["points"]}
     # 싸고 똑똑(DeepSeek)·비싸지만 최고 지능(Closed-1)은 프런티어,
     # 더 싼 모델보다 지능이 낮은 Closed-2는 지배당해 탈락
@@ -217,10 +238,30 @@ def test_agents_page_paper_link_frontier_and_board_link(conn):
     assert r.status_code == 200
     assert "가성비 프런티어" in r.text
     assert "frontier-scatter" in r.text
+    assert "Intelligence Index ↑" in r.text                  # 축 제목
     assert "/paper/deepseek-v3-tech-report" in r.text        # 논문 직행
     assert "/sota/language-modelling/price-per-1m-tokens-blended-3-1" \
         in r.text                                            # 보드 직행
+    # Math Index는 사용자 요청으로 /agents 보드에서 제외
+    assert all(d != "Artificial Analysis Math Index"
+               for d, _, _ in queries.MODEL_BOARDS)
     queries._agent_paper_cache.clear()
+
+
+def test_agents_page_compact_layout(conn):
+    """스크롤 부담 완화 UI: 바로가기 칩 + 카드 그리드 + 11번째 행부터 접기."""
+    for i in range(12):
+        external_boards._insert(
+            conn, "Language Modelling",
+            "Artificial Analysis Intelligence Index", "Index",
+            f"M{i}", str(70 - i), "2026-03-01", "NLP", external_boards.AA_LINK)
+    conn.commit()
+    db_file = conn.execute("PRAGMA database_list").fetchone()[2]
+    from pathlib import Path
+    r = TestClient(create_app(Path(db_file))).get("/agents")
+    assert r.status_code == 200
+    assert "board-nav" in r.text and "model-grid" in r.text
+    assert "나머지 2개 보기" in r.text  # 상위 10개 이후는 접힘
 
 
 def test_models_page_empty_state(tmp_path):

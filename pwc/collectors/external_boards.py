@@ -59,6 +59,11 @@ AA_BENCHMARKS = {
     "tau_banking": ("Task-Oriented Dialogue Systems",
                     "Tau3-Banking", "Accuracy"),
     "lcr": ("Long-Context Understanding", "AA-LCR", "Accuracy"),
+}
+# AA 자체 인덱스(0~100 스케일) — 벤치마크 분수와 달리 백분율 정규화를
+# 하면 안 된다: 초소형 모델의 인덱스가 1.2 이하일 때 ×100 되어
+# 가성비 산점도 최상단에 잘못 찍히는 실사고가 있었다 (Gemma 3n E4B)
+AA_INDEXES = {
     "artificial_analysis_intelligence_index": (
         "Language Modelling", "Artificial Analysis Intelligence Index",
         "Index"),
@@ -154,7 +159,7 @@ def collect_artificial_analysis(conn: sqlite3.Connection) -> int:
             continue
         for k, v in evals.items():
             if (k not in AA_BENCHMARKS and k not in AA_RAW_BENCHMARKS
-                    and k not in unmapped):
+                    and k not in AA_INDEXES and k not in unmapped):
                 unmapped[k] = v
         seen_ds: set[str] = set()
         for key_name, spec in AA_BENCHMARKS.items():
@@ -172,9 +177,10 @@ def collect_artificial_analysis(conn: sqlite3.Connection) -> int:
             added += 1
         pricing = m.get("pricing") if isinstance(m.get("pricing"), dict) \
             else {}
-        for key_name, spec in {**AA_RAW_BENCHMARKS, **AA_PRICING}.items():
-            # 비용·가격 등 raw 지표 — evaluations/모델 최상위/pricing에서
-            # 탐색, 백분율 정규화 없이 원값 유지
+        for key_name, spec in {**AA_INDEXES, **AA_RAW_BENCHMARKS,
+                               **AA_PRICING}.items():
+            # 인덱스·비용·가격 등 raw 지표 — evaluations/모델 최상위/
+            # pricing에서 탐색, 백분율 정규화 없이 원값 유지
             raw = evals.get(key_name)
             if raw is None:
                 raw = m.get(key_name)
@@ -185,6 +191,10 @@ def collect_artificial_analysis(conn: sqlite3.Connection) -> int:
             try:
                 v = float(raw)  # type: ignore[arg-type]
             except (TypeError, ValueError):
+                continue
+            # 0/음수는 '미책정' — 가격 0인 모델들이 가격 보드 상위를
+            # $0로 도배하던 실사고. 인덱스 0도 데이터 없음과 구분 불가
+            if v <= 0:
                 continue
             task, dataset, metric = spec
             if dataset in seen_ds:
