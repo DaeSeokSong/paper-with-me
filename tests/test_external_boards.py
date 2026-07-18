@@ -253,6 +253,9 @@ def test_agents_page_paper_link_frontier_and_board_link(conn):
     assert "agent-metric" in r.text and "agent-thr" in r.text
     assert "AGENT_METRICS" in r.text
     assert "이상" in r.text and "미만" in r.text
+    # 보드별 정렬 전환 버튼 + 클라이언트 정렬용 data-value
+    assert "board-sort" in r.text
+    assert 'data-value="0.48"' in r.text
     # 산점도 점에 data-model 부여 (검색 초록 강조용)
     assert 'data-model="deepseek-v3.2 (deepseek)"' in r.text
     queries._agent_paper_cache.clear()
@@ -276,8 +279,9 @@ def test_price_board_restricted_to_frontier_models(conn):
     boards = {b["dataset"]: b for b in queries.model_comparison(conn)}
     price = boards["Price per 1M Tokens (Blended 3:1)"]
     assert all(p["model"] != "LegacyPricey" for p in price["rows"])
-    assert [p["value"] for p in price["rows"]] == [0.48, 3.0, 9.0]  # 싼 순
-    assert price["badge"] == "지능 상위 25 · 싼 순"
+    # 기본 비싼 순 (사용자 요청) — 화면에서 정렬 버튼으로 전환 가능
+    assert [p["value"] for p in price["rows"]] == [9.0, 3.0, 0.48]
+    assert price["badge"] == "지능 상위 25 · 비싼 순"
     assert "1백만 토큰당" in price["desc"]
 
 

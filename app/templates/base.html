@@ -291,6 +291,11 @@
   .model-value { flex: 0 0 58px; font-weight: 700; font-size: 12px; }
   .model-more summary { cursor: pointer; color: var(--muted);
                         font-size: 12px; margin-top: 6px; }
+  .board-sort { border: 1px solid var(--border); border-radius: 999px;
+                padding: 2px 10px; font-size: 11px; cursor: pointer;
+                color: var(--muted); background: var(--card-bg);
+                vertical-align: middle; margin-left: 6px; }
+  .board-sort:hover { border-color: #21cbce; color: var(--fg); }
   @media (max-width: 640px) { .model-name { flex-basis: 110px; } }
   /* /agents 가성비 프런티어 산점도 (지능 × 가격, 서버 계산 좌표) */
   .frontier-scatter { width: 100%; max-width: 860px; height: auto;

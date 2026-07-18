@@ -1201,15 +1201,16 @@ MODEL_BOARDS = [
      "desc": "Intelligence Index 평가 태스크 1건을 수행하는 데 드는 평균 "
              "비용(USD). 토큰 단가와 응답 길이를 함께 반영합니다."},
     {"dataset": "Price per 1M Tokens (Blended 3:1)",
-     "metric": "USD per 1M Tokens", "order": "asc",
-     "badge": "지능 상위 25 · 싼 순",
+     "metric": "USD per 1M Tokens", "order": "desc",
+     "badge": "지능 상위 25 · 비싼 순",
      # 전체 576개 중 가격순 상위/하위는 구형 고가 모델·무명 저가 모델만
      # 노출된다(사용자 피드백: Fable·Sol이 안 보임) — 지능 지수 상위
-     # 25개 모델로 대상을 좁혀 '지금 쓸 만한 모델의 가격'만 보여준다
+     # 25개 모델로 대상을 좁혀 '지금 쓸 만한 모델의 가격'만 보여준다.
+     # 기본은 비싼 순(사용자 요청), 정렬 버튼으로 전환 가능.
      "top_by": ("Artificial Analysis Intelligence Index", "Index"),
      "desc": "입력:출력 3:1 혼합 기준 1백만 토큰당 API 가격(USD). "
              "Intelligence Index 상위 25개 프런티어 모델만 대상으로, "
-             "같은 급에서 무엇이 싼지 비교합니다."},
+             "같은 급 안에서 가격을 비교합니다 (기본 비싼 순)."},
 ]
 
 # 모델명 → 논문 링크는 스냅샷이 갈리기 전까지 불변이므로 프로세스
