@@ -1169,14 +1169,42 @@ def stats(conn) -> dict:
 
 # /models 페이지 — Artificial Analysis 원본 4개 차트만 미러 (사용자 요청:
 # 전체 AA는 과하고, 핵심 4개 지표만)
-# Math Index는 사용자 요청으로 /agents에서 제외 (수집·/sota 보드는 유지)
+# Math Index는 사용자 요청으로 /agents에서 제외 (수집·/sota 보드는 유지).
+# order: 표 정렬 방향 — 가격은 '비싼 순'(사용자 요청: 오름차순이면 무명
+# 저가 모델만 상위에 노출되고 프런티어 모델이 안 보인다).
+# desc: 지표가 무엇을 어떻게 측정하는지 2~3줄 요약 (사용자 요청).
 MODEL_BOARDS = [
-    ("Artificial Analysis Intelligence Index", "Index", False),
-    ("Artificial Analysis Coding Index", "Index", False),
-    ("Humanity's Last Exam", "Accuracy", False),
-    ("AA-Omniscience Hallucination Rate", "Hallucination Rate", True),
-    ("Cost per Intelligence Index Task", "Cost per task (USD)", True),
-    ("Price per 1M Tokens (Blended 3:1)", "USD per 1M Tokens", True),
+    {"dataset": "Artificial Analysis Intelligence Index", "metric": "Index",
+     "order": "desc", "badge": None,
+     "desc": "MMLU-Pro·GPQA Diamond·HLE·LiveCodeBench·SciCode·AA-LCR·"
+             "Terminal-Bench 등 10개 안팎의 평가를 Artificial Analysis가 "
+             "가중 합성한 종합 지능 지수(0~100). 높을수록 전반적 성능이 "
+             "좋습니다."},
+    {"dataset": "Artificial Analysis Coding Index", "metric": "Index",
+     "order": "desc", "badge": None,
+     "desc": "LiveCodeBench·SciCode·Terminal-Bench 등 코딩 관련 평가만 "
+             "합성한 지수(0~100). 코드 생성과 터미널 작업 수행 능력을 "
+             "봅니다."},
+    {"dataset": "Humanity's Last Exam", "metric": "Accuracy",
+     "order": "desc", "badge": None,
+     "desc": "전 분야 전문가들이 출제한 최고 난도 시험(2,500+ 문항)의 "
+             "정답률(%). 프런티어 모델도 수십 % 수준에 머무는 미포화 "
+             "벤치마크입니다."},
+    {"dataset": "AA-Omniscience Hallucination Rate",
+     "metric": "Hallucination Rate", "order": "asc", "badge": "낮을수록 좋음",
+     "desc": "AA-Omniscience 지식 평가에서 모른다고 답해야 할 문항에 "
+             "그럴싸한 오답을 지어낸 비율(%). 낮을수록 답변을 신뢰할 수 "
+             "있습니다."},
+    {"dataset": "Cost per Intelligence Index Task",
+     "metric": "Cost per task (USD)", "order": "asc",
+     "badge": "낮을수록 좋음",
+     "desc": "Intelligence Index 평가 태스크 1건을 수행하는 데 드는 평균 "
+             "비용(USD). 토큰 단가와 응답 길이를 함께 반영합니다."},
+    {"dataset": "Price per 1M Tokens (Blended 3:1)",
+     "metric": "USD per 1M Tokens", "order": "desc", "badge": "비싼 순",
+     "desc": "입력:출력 3:1 혼합 기준 1백만 토큰당 API 가격(USD). "
+             "프런티어(고가) 모델부터 보이도록 비싼 순으로 정렬했습니다 — "
+             "사용료 관점에서는 물론 낮을수록 좋습니다."},
 ]
 
 # 모델명 → 논문 링크는 스냅샷이 갈리기 전까지 불변이므로 프로세스
@@ -1211,8 +1239,9 @@ def _agent_paper(conn, model_name: str) -> str | None:
                JOIN papers p ON p.rowid = f.rowid
                WHERE papers_fts MATCH ? ORDER BY rank LIMIT 1""",
             (f'title:"{cand}"',)).fetchone()
-        if row and row["paper_url"]:
-            url = "/paper/" + paper_slug(row["paper_url"])
+        # 위치 인덱스: row_factory 유무(웹앱 Row/수집기 tuple)에 무관
+        if row and row[0]:
+            url = "/paper/" + paper_slug(row[0])
             break
     _agent_paper_cache[model_name] = url
     return url
@@ -1220,9 +1249,10 @@ def _agent_paper(conn, model_name: str) -> str | None:
 
 def model_comparison(conn) -> list[dict]:
     """외부 미러(source='external')에서 모델 비교 보드를 뽑는다.
-    lower_better 보드는 오름차순 정렬. 데이터가 없으면 빈 rows."""
+    보드별 order(asc/desc)로 정렬. 데이터가 없으면 빈 rows."""
     out = []
-    for dataset, metric, lower in MODEL_BOARDS:
+    for board in MODEL_BOARDS:
+        dataset, metric = board["dataset"], board["metric"]
         rows = conn.execute(
             "SELECT task, model_name, metrics, paper_date FROM sota_rows "
             "WHERE source = 'external' AND dataset = ?", (dataset,),
@@ -1234,13 +1264,14 @@ def model_comparison(conn) -> list[dict]:
                 v = float(json.loads(r["metrics"]).get(metric))
             except (TypeError, ValueError):
                 continue
-            # 가격/비용 0은 '미책정' — 구 스냅샷에 남은 0행이 오름차순
-            # 보드 상위를 $0로 도배하지 않게 읽기 시점에도 거른다
+            # 가격/비용 0은 '미책정' — 구 스냅샷에 남은 0행이 보드를
+            # $0로 도배하지 않게 읽기 시점에도 거른다
             if v <= 0 and "USD" in metric:
                 continue
             parsed.append({"model": r["model_name"], "value": v,
                            "date": r["paper_date"]})
-        parsed.sort(key=lambda p: p["value"], reverse=not lower)
+        parsed.sort(key=lambda p: p["value"],
+                    reverse=board["order"] == "desc")
         top = parsed[:25]
         # 논문 링크는 화면에 나가는 상위 행에만 계산한다 — 전체 576개
         # 모델에 FTS를 돌리면 첫 로드가 수 초 늘어난다 (이후는 캐시)
@@ -1250,16 +1281,26 @@ def model_comparison(conn) -> list[dict]:
         # 한 표에 선다 (학계 SOTA vs 상용 모델 비교, 이 서비스 고유)
         board_url = (f"/sota/{slugify(task)}/{slugify(dataset)}"
                      if task and top else None)
-        out.append({"dataset": dataset, "metric": metric,
-                    "lower_better": lower, "rows": top,
-                    "board_url": board_url})
+        out.append({**board, "rows": top, "board_url": board_url})
     return out
 
 
-def value_frontier(conn) -> dict | None:
-    """지능 지수 × 1M 토큰당 가격(혼합 3:1) 산점도 + 파레토 프런티어.
+# 가성비 산점도의 Y축으로 전환 가능한 지표들 (사용자 요청: 지능·HLE·코딩)
+SCATTER_METRICS = [
+    ("Artificial Analysis Intelligence Index", "Index",
+     "Intelligence Index"),
+    ("Artificial Analysis Coding Index", "Index", "Coding Index"),
+    ("Humanity's Last Exam", "Accuracy", "Humanity's Last Exam"),
+]
 
-    좌표는 100×56 viewBox 기준으로 서버에서 계산한다(x: 로그 축).
+
+def value_frontier(conn,
+                   dataset: str = "Artificial Analysis Intelligence Index",
+                   metric: str = "Index",
+                   label: str = "Intelligence Index") -> dict | None:
+    """지표 × 1M 토큰당 가격(혼합 3:1) 산점도 + 파레토 프런티어.
+
+    좌표는 100×60 viewBox 기준으로 서버에서 계산한다(x: 로그 축).
     두 지표를 모두 가진 모델이 3개 미만이면 섹션을 숨긴다(None).
     """
     import math
@@ -1276,7 +1317,7 @@ def value_frontier(conn) -> dict | None:
                 continue
         return vals
 
-    intel = _vals("Artificial Analysis Intelligence Index", "Index")
+    intel = _vals(dataset, metric)
     price = _vals("Price per 1M Tokens (Blended 3:1)", "USD per 1M Tokens")
     pts = [{"model": m, "intel": v, "price": price[m]}
            for m, v in intel.items() if price.get(m, 0) > 0]
@@ -1289,6 +1330,9 @@ def value_frontier(conn) -> dict | None:
     for p in pts:
         p["x"] = round(5 + 90 * (math.log10(p["price"]) - llo) / span, 2)
         p["y"] = round(50 - 44 * p["intel"] / ymax, 2)
+        # 점 클릭 → 논문 이동 (사용자 요청). 전 모델 FTS는 첫 로드를 수 초
+        # 늘리므로 보드 계산에서 이미 캐시된 모델만 링크한다
+        p["paper"] = _agent_paper_cache.get(p["model"])
     pts.sort(key=lambda p: (p["price"], -p["intel"]))
     best, frontier = float("-inf"), []
     for p in pts:
@@ -1296,6 +1340,9 @@ def value_frontier(conn) -> dict | None:
         if p["frontier"]:
             best = p["intel"]
             frontier.append(p)
+    for p in frontier:
+        # 프런티어 점(라벨 노출·클릭 1순위)은 정식 조회 — 수십 개뿐이라 저렴
+        p["paper"] = _agent_paper(conn, p["model"])
     path = " ".join(
         f"{'M' if i == 0 else 'L'} {p['x']},{p['y']}"
         for i, p in enumerate(frontier))
@@ -1303,9 +1350,20 @@ def value_frontier(conn) -> dict | None:
     for e in range(math.ceil(llo), math.floor(lhi) + 1):
         ticks.append({"x": round(5 + 90 * (e - llo) / span, 2),
                       "label": f"${10 ** e:g}"})
-    # Y축(지능 지수) 눈금 — 축 라벨 없이는 산점도를 읽을 수 없다는
-    # 사용자 피드백. ymax에 맞춰 3~5개 나오는 스텝을 고른다.
+    # Y축 눈금 — 축 라벨 없이는 산점도를 읽을 수 없다는 사용자 피드백.
+    # ymax에 맞춰 3~5개 나오는 스텝을 고른다.
     ystep = next(s for s in (5, 10, 20, 25, 50) if ymax / s <= 5)
     yticks = [{"y": round(50 - 44 * t / ymax, 2), "label": t}
               for t in range(ystep, int(ymax) + 1, ystep)]
-    return {"points": pts, "path": path, "ticks": ticks, "yticks": yticks}
+    return {"points": pts, "path": path, "ticks": ticks, "yticks": yticks,
+            "label": label}
+
+
+def value_frontiers(conn) -> list[dict]:
+    """전환 가능한 지표별 가성비 산점도 목록 (데이터 있는 지표만)."""
+    out = []
+    for ds, metric, label in SCATTER_METRICS:
+        f = value_frontier(conn, ds, metric, label)
+        if f:
+            out.append(f)
+    return out

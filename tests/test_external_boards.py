@@ -243,9 +243,31 @@ def test_agents_page_paper_link_frontier_and_board_link(conn):
     assert "/sota/language-modelling/price-per-1m-tokens-blended-3-1" \
         in r.text                                            # 보드 직행
     # Math Index는 사용자 요청으로 /agents 보드에서 제외
-    assert all(d != "Artificial Analysis Math Index"
-               for d, _, _ in queries.MODEL_BOARDS)
+    assert all(b["dataset"] != "Artificial Analysis Math Index"
+               for b in queries.MODEL_BOARDS)
+    # 지표 설명(무엇을 어떻게 측정하는지)·검색 필터·지표 전환 탭
+    assert "종합 지능 지수" in r.text
+    assert "agent-search" in r.text
+    assert "fs-tabs" in r.text
+    # 산점도 점에 data-model 부여 (검색 초록 강조용)
+    assert 'data-model="deepseek-v3.2 (deepseek)"' in r.text
     queries._agent_paper_cache.clear()
+
+
+def test_price_board_sorted_expensive_first(conn):
+    """가격 보드는 비싼 순 — 오름차순이면 무명 저가 모델만 상위에 노출되고
+    프런티어 모델이 안 보인다는 사용자 피드백."""
+    import sqlite3
+
+    from app import queries
+
+    conn.row_factory = sqlite3.Row
+    _seed_value_frontier(conn)
+    boards = {b["dataset"]: b for b in queries.model_comparison(conn)}
+    price = boards["Price per 1M Tokens (Blended 3:1)"]
+    assert [p["value"] for p in price["rows"]] == [9.0, 3.0, 0.48]
+    assert price["badge"] == "비싼 순"
+    assert "1백만 토큰당" in price["desc"]
 
 
 def test_agents_page_compact_layout(conn):
@@ -260,7 +282,7 @@ def test_agents_page_compact_layout(conn):
     from pathlib import Path
     r = TestClient(create_app(Path(db_file))).get("/agents")
     assert r.status_code == 200
-    assert "board-nav" in r.text and "model-grid" in r.text
+    assert "agent-search" in r.text and "model-grid" in r.text
     assert "나머지 2개 보기" in r.text  # 상위 10개 이후는 접힘
 
 
