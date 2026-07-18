@@ -264,9 +264,12 @@
   /* /agents 가성비 프런티어 산점도 (지능 × 가격, 서버 계산 좌표) */
   .frontier-scatter { width: 100%; max-width: 860px; height: auto;
                       margin: 4px 0 24px; }
-  .frontier-scatter .fs-grid { stroke: var(--border); stroke-width: .18; }
-  .frontier-scatter .fs-tick, .frontier-scatter .fs-label {
-    font-size: 2.3px; fill: var(--muted); }
+  .frontier-scatter .fs-grid { stroke: var(--border); stroke-width: .15; }
+  /* viewBox 100 기준이라 px가 화면에서 ~8.6배로 확대된다 — 1.4px ≈ 12px */
+  .frontier-scatter .fs-tick { font-size: 1.5px; fill: var(--muted); }
+  .frontier-scatter .fs-label { font-size: 1.3px; fill: var(--muted); }
+  .frontier-scatter .fs-axis { font-size: 1.6px; fill: var(--muted);
+                               font-weight: 700; }
   .frontier-scatter .fs-line { fill: none; stroke: #21cbce;
                                stroke-width: .45; opacity: .9; }
   .frontier-scatter .fs-pt { fill: var(--muted); opacity: .55; }

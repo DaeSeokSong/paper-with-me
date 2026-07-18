@@ -1169,10 +1169,10 @@ def stats(conn) -> dict:
 
 # /models 페이지 — Artificial Analysis 원본 4개 차트만 미러 (사용자 요청:
 # 전체 AA는 과하고, 핵심 4개 지표만)
+# Math Index는 사용자 요청으로 /agents에서 제외 (수집·/sota 보드는 유지)
 MODEL_BOARDS = [
     ("Artificial Analysis Intelligence Index", "Index", False),
     ("Artificial Analysis Coding Index", "Index", False),
-    ("Artificial Analysis Math Index", "Index", False),
     ("Humanity's Last Exam", "Accuracy", False),
     ("AA-Omniscience Hallucination Rate", "Hallucination Rate", True),
     ("Cost per Intelligence Index Task", "Cost per task (USD)", True),
@@ -1233,6 +1233,10 @@ def model_comparison(conn) -> list[dict]:
             try:
                 v = float(json.loads(r["metrics"]).get(metric))
             except (TypeError, ValueError):
+                continue
+            # 가격/비용 0은 '미책정' — 구 스냅샷에 남은 0행이 오름차순
+            # 보드 상위를 $0로 도배하지 않게 읽기 시점에도 거른다
+            if v <= 0 and "USD" in metric:
                 continue
             parsed.append({"model": r["model_name"], "value": v,
                            "date": r["paper_date"]})
@@ -1299,4 +1303,9 @@ def value_frontier(conn) -> dict | None:
     for e in range(math.ceil(llo), math.floor(lhi) + 1):
         ticks.append({"x": round(5 + 90 * (e - llo) / span, 2),
                       "label": f"${10 ** e:g}"})
-    return {"points": pts, "path": path, "ticks": ticks}
+    # Y축(지능 지수) 눈금 — 축 라벨 없이는 산점도를 읽을 수 없다는
+    # 사용자 피드백. ymax에 맞춰 3~5개 나오는 스텝을 고른다.
+    ystep = next(s for s in (5, 10, 20, 25, 50) if ymax / s <= 5)
+    yticks = [{"y": round(50 - 44 * t / ymax, 2), "label": t}
+              for t in range(ystep, int(ymax) + 1, ystep)]
+    return {"points": pts, "path": path, "ticks": ticks, "yticks": yticks}
