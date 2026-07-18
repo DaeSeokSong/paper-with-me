@@ -93,7 +93,8 @@ Y축 지표를 전환하고, 점을 누르면 관련 논문/테크 리포트로 
 
 {% macro bar_rows(rows, mx, metric, dataset) -%}
   {% for r in rows %}
-  <div class="model-bar-row" data-model="{{ r.model | lower }}">
+  <div class="model-bar-row" data-model="{{ r.model | lower }}"
+       data-value="{{ r.value }}">
     <span class="model-name" lang="en">{% if r.paper %}<a
       href="{{ r.paper }}" title="관련 논문/테크 리포트">{{ r.model }}
       📄</a>{% else %}{{ r.model }}{% endif %}</span>
@@ -110,6 +111,9 @@ Y축 지표를 전환하고, 점을 누르면 관련 논문/테크 리포트로 
 <section class="model-board" id="board-{{ loop.index }}">
   <h2 lang="en">{{ b.dataset }}
     {% if b.badge %}<span class="badge">{{ b.badge }}</span>{% endif %}
+    <button class="board-sort" type="button" data-dir="{{ b.order }}"
+            title="정렬 방향 전환">{{ "내림차순 ↓" if b.order == "desc"
+            else "오름차순 ↑" }}</button>
   </h2>
   {# 지표가 무엇을 어떻게 측정하는지 2~3줄 요약 (사용자 요청) #}
   <p class="muted board-desc">{{ b.desc }}</p>
@@ -182,6 +186,29 @@ var AGENT_METRICS = {{ filters.models | tojson }};
   [q, mSel, opSel, thr].forEach(function (el) {
     el.addEventListener("input", apply);
     el.addEventListener("change", apply);
+  });
+
+  // 보드별 오름/내림차순 전환 (사용자 요청) — 상위 10개/접힌 나머지
+  // 컨테이너에 재배치해 접기 구조를 유지한다
+  document.querySelectorAll(".model-board").forEach(function (sec) {
+    var btn = sec.querySelector(".board-sort");
+    if (!btn) return;
+    btn.addEventListener("click", function () {
+      var dir = btn.dataset.dir === "desc" ? "asc" : "desc";
+      btn.dataset.dir = dir;
+      btn.textContent = dir === "desc" ? "내림차순 ↓" : "오름차순 ↑";
+      var rows = Array.prototype.slice.call(
+        sec.querySelectorAll(".model-bar-row"));
+      rows.sort(function (a, b) {
+        var d = parseFloat(a.dataset.value) - parseFloat(b.dataset.value);
+        return dir === "asc" ? d : -d;
+      });
+      var main = sec.querySelector(".model-bars");
+      var more = sec.querySelector(".model-more .model-bars");
+      rows.forEach(function (r, i) {
+        ((i < 10 || !more) ? main : more).appendChild(r);
+      });
+    });
   });
 })();
 </script>
