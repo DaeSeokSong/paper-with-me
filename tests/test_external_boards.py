@@ -249,25 +249,50 @@ def test_agents_page_paper_link_frontier_and_board_link(conn):
     assert "종합 지능 지수" in r.text
     assert "agent-search" in r.text
     assert "fs-tabs" in r.text
+    # 수치 필터 UI + 클라이언트 지표 맵 (지표 X가 Y 이상/미만)
+    assert "agent-metric" in r.text and "agent-thr" in r.text
+    assert "AGENT_METRICS" in r.text
+    assert "이상" in r.text and "미만" in r.text
     # 산점도 점에 data-model 부여 (검색 초록 강조용)
     assert 'data-model="deepseek-v3.2 (deepseek)"' in r.text
     queries._agent_paper_cache.clear()
 
 
-def test_price_board_sorted_expensive_first(conn):
-    """가격 보드는 비싼 순 — 오름차순이면 무명 저가 모델만 상위에 노출되고
-    프런티어 모델이 안 보인다는 사용자 피드백."""
+def test_price_board_restricted_to_frontier_models(conn):
+    """가격 보드는 지능 상위 25개 모델만 — 전체 대상 정렬은 어느 방향이든
+    구형 고가/무명 저가 모델만 노출된다는 사용자 피드백 (Fable·Sol 부재)."""
     import sqlite3
 
     from app import queries
 
     conn.row_factory = sqlite3.Row
     _seed_value_frontier(conn)
+    # 지능 지수가 없는(=구형) 초고가 모델 — 가격 보드에서 제외되어야 함
+    external_boards._insert(
+        conn, "Language Modelling", "Price per 1M Tokens (Blended 3:1)",
+        "USD per 1M Tokens", "LegacyPricey", "120", "2023-01-01", "NLP",
+        external_boards.AA_LINK)
+    conn.commit()
     boards = {b["dataset"]: b for b in queries.model_comparison(conn)}
     price = boards["Price per 1M Tokens (Blended 3:1)"]
-    assert [p["value"] for p in price["rows"]] == [9.0, 3.0, 0.48]
-    assert price["badge"] == "비싼 순"
+    assert all(p["model"] != "LegacyPricey" for p in price["rows"])
+    assert [p["value"] for p in price["rows"]] == [0.48, 3.0, 9.0]  # 싼 순
+    assert price["badge"] == "지능 상위 25 · 싼 순"
     assert "1백만 토큰당" in price["desc"]
+
+
+def test_agent_metric_map_for_client_filter(conn):
+    """수치 필터용 모델별 지표 맵 — 데이터 있는 지표만 labels에 노출."""
+    from app import queries
+
+    _seed_value_frontier(conn)
+    m = queries.agent_metric_map(conn)
+    assert "Intelligence Index" in m["labels"]
+    assert "Price (USD/1M)" in m["labels"]
+    assert "Coding Index" not in m["labels"]  # 시드에 없음
+    row = m["models"]["deepseek-v3.2 (deepseek)"]
+    assert row["Intelligence Index"] == 58.0
+    assert row["Price (USD/1M)"] == 0.48
 
 
 def test_agents_page_compact_layout(conn):

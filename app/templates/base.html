@@ -251,11 +251,13 @@
   }
   /* /agents 비교 바 차트 (Artificial Analysis 미러) — 스크롤 부담을
      줄이기 위해 2열 카드 그리드 + 압축 행 (사용자 피드백) */
-  .agent-search-wrap { margin: 14px 0 4px; }
-  #agent-search { width: 100%; max-width: 560px; padding: 8px 12px;
-                  border: 1px solid var(--border); border-radius: 8px;
-                  font-size: 13px; color: var(--fg);
-                  background: var(--card-bg); }
+  .agent-search-wrap { margin: 14px 0 4px; display: flex; flex-wrap: wrap;
+                       gap: 8px; align-items: center; }
+  .agent-search-wrap input, .agent-search-wrap select {
+    padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 13px; color: var(--fg); background: var(--card-bg); }
+  #agent-search { flex: 1 1 260px; max-width: 420px; }
+  #agent-thr { width: 90px; }
   /* 산점도 지표 전환 (라디오+CSS — JS 불필요) */
   .fs-switch input { position: absolute; opacity: 0;
                      pointer-events: none; }
