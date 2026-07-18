@@ -483,9 +483,11 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         """AI Agents 비교 — Artificial Analysis 원본 지표 미러 +
         가성비 프런티어·논문 직행(paper-with-me 고유)."""
         c = conn()
-        return render(request, "models.html",
-                      boards=queries.model_comparison(c),
-                      frontier=queries.value_frontier(c))
+        # boards가 먼저 평가되어야 _agent_paper 캐시가 데워져 산점도
+        # 점들이 추가 FTS 없이 논문 링크를 얻는다
+        boards = queries.model_comparison(c)
+        return render(request, "models.html", boards=boards,
+                      frontiers=queries.value_frontiers(c))
 
     @app.get("/models", include_in_schema=False)
     def models_alias():

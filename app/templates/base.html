@@ -251,11 +251,25 @@
   }
   /* /agents 비교 바 차트 (Artificial Analysis 미러) — 스크롤 부담을
      줄이기 위해 2열 카드 그리드 + 압축 행 (사용자 피드백) */
-  .board-nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
-  .board-nav a { border: 1px solid var(--border); border-radius: 999px;
-                 padding: 3px 12px; font-size: 12px; text-decoration: none;
-                 color: var(--fg); background: var(--card-bg); }
-  .board-nav a:hover { border-color: #21cbce; }
+  .agent-search-wrap { margin: 14px 0 4px; }
+  #agent-search { width: 100%; max-width: 560px; padding: 8px 12px;
+                  border: 1px solid var(--border); border-radius: 8px;
+                  font-size: 13px; color: var(--fg);
+                  background: var(--card-bg); }
+  /* 산점도 지표 전환 (라디오+CSS — JS 불필요) */
+  .fs-switch input { position: absolute; opacity: 0;
+                     pointer-events: none; }
+  .fs-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 8px; }
+  .fs-tabs label { border: 1px solid var(--border); border-radius: 999px;
+                   padding: 3px 12px; font-size: 12px; cursor: pointer;
+                   color: var(--fg); background: var(--card-bg); }
+  .fs-panel { display: none; }
+  #fsm-0:checked ~ .fs-panel-0, #fsm-1:checked ~ .fs-panel-1,
+  #fsm-2:checked ~ .fs-panel-2 { display: block; }
+  #fsm-0:checked ~ .fs-tabs label[for="fsm-0"],
+  #fsm-1:checked ~ .fs-tabs label[for="fsm-1"],
+  #fsm-2:checked ~ .fs-tabs label[for="fsm-2"] {
+    border-color: #21cbce; background: #21cbce22; font-weight: 700; }
   .model-grid { display: grid; gap: 18px; margin: 4px 0 28px;
                 grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
   .model-board { border: 1px solid var(--border); border-radius: 8px;
@@ -289,6 +303,11 @@
                                stroke-width: .45; opacity: .9; }
   .frontier-scatter .fs-pt { fill: var(--muted); opacity: .55; }
   .frontier-scatter .fs-pt.on { fill: #21cbce; opacity: 1; }
+  .frontier-scatter .fs-pt.link { cursor: pointer; }
+  /* 검색 일치 모델 강조 (사용자 요청: 초록색) */
+  .frontier-scatter .fs-pt.hit { fill: #22c55e; opacity: 1; r: 1.3px; }
+  .model-board .board-desc { font-size: 12px; line-height: 1.5;
+                             margin: 2px 0 6px; }
   .stats { display: flex; gap: 12px; flex-wrap: wrap; margin: 20px 0 8px; }
   .stats div { text-align: center; border: 1px solid var(--border);
                border-radius: 8px; padding: 10px 18px; background: var(--card-bg);
